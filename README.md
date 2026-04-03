@@ -8,6 +8,7 @@
 - `app/db`: SQLAlchemy setup and models
 - `app/schemas`: Pydantic request/response schemas
 - `app/integrations`: External connectors (SharePoint placeholder)
+- `app/services`: Persistence and workflow application services
 - `dashboard`: Streamlit internal dashboard
 
 ## Requirements
@@ -36,17 +37,17 @@ uvicorn app.main:app --reload
 streamlit run dashboard/app.py
 ```
 
-## Run Local End-to-End Workflow Demo
+## Run Persisted End-to-End Demo
 
 ```bash
-python -m app.scripts.demo_workflow_run
+python -m app.scripts.demo_persisted_run
 ```
 
 ## Minimal Verification Commands
 
 ```bash
 python -m compileall app dashboard
-python -m app.scripts.demo_workflow_run
+python -m app.scripts.demo_persisted_run
 ```
 
-The second command is a minimal end-to-end proof that the workflow executes from draft to review routing and returns final structured state.
+The second command runs a full workflow, saves ticket/workflow/steps in SQLite, and performs a human-approval write when applicable.

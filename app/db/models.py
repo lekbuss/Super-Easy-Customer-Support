@@ -44,7 +44,11 @@ class WorkflowRun(Base):
     status: Mapped[WorkflowStatus] = mapped_column(Enum(WorkflowStatus), default=WorkflowStatus.drafting)
     iteration_count: Mapped[int] = mapped_column(Integer, default=0)
     final_decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    final_draft_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    final_review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_action: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class WorkflowStep(Base):
@@ -52,8 +56,12 @@ class WorkflowStep(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workflow_run_id: Mapped[int] = mapped_column(ForeignKey("workflow_runs.id"), index=True)
-    step_name: Mapped[str] = mapped_column(String(128))
-    output_payload: Mapped[str] = mapped_column(Text)
+    iteration: Mapped[int] = mapped_column(Integer, index=True)
+    status: Mapped[str] = mapped_column(String(64))
+    decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    draft_response: Mapped[str] = mapped_column(Text)
+    review_notes: Mapped[str] = mapped_column(Text)
+    next_action: Mapped[str] = mapped_column(String(128))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
