@@ -1,6 +1,10 @@
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
-from langgraph.graph import END, StateGraph
+try:
+    from langgraph.graph import END, StateGraph
+except Exception:
+    END = "__END__"
+    StateGraph = None
 
 from app.agents.main_agent import generate_draft
 from app.agents.review_agent import review_draft
@@ -99,7 +103,7 @@ def revise_node(state: SupportState) -> SupportState:
             **state,
             "draft_response": revised_draft,
             "iteration": state["iteration"] + 1,
-            "status": "reviewing",
+            "status": "revising",
             "next_action": "review_revised_draft",
         }
     except Exception as exc:
@@ -149,7 +153,24 @@ def route_after_review(state: SupportState) -> str:
     return "revise"
 
 
-def build_support_workflow():
+class LocalWorkflowApp:
+    def invoke(self, state: SupportState) -> SupportState:
+        current = main_agent_node(state)
+        while True:
+            current = review_agent_node(current)
+            route = route_after_review(current)
+            if route == "revise":
+                current = revise_node(current)
+                continue
+            if route == "finish":
+                return finish_node(current)
+            return escalate_node(current)
+
+
+def build_support_workflow() -> Any:
+    if StateGraph is None:
+        return LocalWorkflowApp()
+
     graph = StateGraph(SupportState)
     graph.add_node("main_agent", main_agent_node)
     graph.add_node("review_agent", review_agent_node)
