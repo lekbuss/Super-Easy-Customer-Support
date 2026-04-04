@@ -1,5 +1,5 @@
+import hashlib
 import logging
-import uuid
 from pathlib import Path
 
 from app.core.config import settings
@@ -15,6 +15,9 @@ class VectorStore:
 
     Documents are stored with their embeddings in a persistent local
     collection so that data survives process restarts.
+
+    Document IDs are deterministic (md5 of source_url + chunk index),
+    so re-indexing the same article overwrites rather than duplicates.
     """
 
     def __init__(
@@ -44,7 +47,7 @@ class VectorStore:
     # ------------------------------------------------------------------
 
     def add_documents(self, docs: list[dict]) -> None:
-        """Index a list of document chunks.
+        """Index a list of document chunks (upsert — same URL+index overwrites).
 
         Each dict must contain:
             text       (str)  – chunk content
@@ -56,7 +59,13 @@ class VectorStore:
         texts = [d["text"] for d in docs]
         embeddings = self._embedder.embed_batch(texts)
 
-        ids = [str(uuid.uuid4()) for _ in docs]
+        # Deterministic IDs: md5(source_url::chunk_index)
+        ids = [
+            hashlib.md5(
+                f"{d['metadata'].get('source_url', '')}::{i}".encode()
+            ).hexdigest()
+            for i, d in enumerate(docs)
+        ]
         metadatas = [
             {
                 "source_url": d["metadata"].get("source_url", ""),
@@ -67,13 +76,13 @@ class VectorStore:
             for d in docs
         ]
 
-        self._collection.add(
+        self._collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=texts,
             metadatas=metadatas,
         )
-        logger.debug("Added %d chunks to collection '%s'", len(docs), COLLECTION_NAME)
+        logger.debug("Upserted %d chunks to collection '%s'", len(docs), COLLECTION_NAME)
 
     # ------------------------------------------------------------------
     # Querying
@@ -110,6 +119,24 @@ class VectorStore:
                 }
             )
         return hits
+
+    def has_url(self, source_url: str) -> bool:
+        """Return True if any chunk for this source_url already exists."""
+        results = self._collection.get(
+            where={"source_url": source_url},
+            limit=1,
+            include=[],
+        )
+        return len(results["ids"]) > 0
+
+    def clear(self) -> None:
+        """Delete all documents by recreating the collection."""
+        self._client.delete_collection(COLLECTION_NAME)
+        self._collection = self._client.get_or_create_collection(
+            name=COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+        logger.info("VectorStore cleared — collection '%s' recreated", COLLECTION_NAME)
 
     def count(self) -> int:
         return self._collection.count()

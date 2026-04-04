@@ -1,9 +1,28 @@
+import json
 from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.db.models import ApprovalAction, Ticket, WorkflowRun, WorkflowStatus, WorkflowStep
+from app.db.models import ApprovalAction, ReviewMemory, Ticket, WorkflowRun, WorkflowStatus, WorkflowStep
 from app.services.ticket_service import create_ticket, get_ticket_by_id
+
+
+def _extract_review_comment(review_notes: str | None) -> str:
+    if not review_notes:
+        return ""
+    try:
+        return json.loads(review_notes).get("review_comment", review_notes)
+    except (json.JSONDecodeError, AttributeError):
+        return review_notes
+
+
+def _extract_key_concerns(review_notes: str | None) -> list[str]:
+    if not review_notes:
+        return []
+    try:
+        return json.loads(review_notes).get("key_concerns", [])
+    except (json.JSONDecodeError, AttributeError):
+        return []
 from app.workflows.support_workflow import run_support_workflow
 
 
@@ -81,6 +100,22 @@ def approve_workflow_run(db: Session, workflow_run_id: int, approver: str, notes
         notes=notes,
     )
     db.add(approval)
+
+    # Persist review data to ReviewMemory for future few-shot example enrichment
+    ticket = db.get(Ticket, workflow_run.ticket_id)
+    memory_payload = {
+        "ticket_topic": ticket.subject if ticket else "",
+        "draft_summary": (workflow_run.final_draft_response or "")[:200],
+        "uchiyama_review": _extract_review_comment(workflow_run.final_review_notes),
+        "decision": workflow_run.final_decision or "",
+        "review_pattern": "人工承認済み事例",
+        "key_concerns": _extract_key_concerns(workflow_run.final_review_notes),
+    }
+    db.add(ReviewMemory(
+        ticket_id=workflow_run.ticket_id,
+        memory_text=json.dumps(memory_payload, ensure_ascii=False),
+        reviewer_action=workflow_run.final_decision or "approve",
+    ))
 
     workflow_run.status = WorkflowStatus.approved
     workflow_run.next_action = "ready_for_sending_stage"

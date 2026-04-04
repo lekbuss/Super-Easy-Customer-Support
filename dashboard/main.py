@@ -325,11 +325,13 @@ def apply_custom_theme() -> None:
 
             .page-title {
                 font-family: "Yu Mincho", "Hiragino Mincho ProN", serif;
-                font-size: clamp(2.2rem, 4vw, 3.2rem);
-                line-height: 1.02;
+                font-size: clamp(2.5rem, 4.8vw, 3.8rem);
+                line-height: 0.98;
                 margin: 0 0 0.5rem 0;
-                color: #1a130f;
+                color: #2f3439;
                 letter-spacing: -0.03em;
+                font-weight: 800;
+                text-shadow: 0 2px 10px rgba(47, 52, 57, 0.12);
             }
 
             .page-subtitle {
@@ -964,13 +966,38 @@ def render_flow_divider(label: str, active: bool = False) -> None:
     )
 
 
+def _parse_review_notes(notes: str) -> tuple[str, list[str], str]:
+    """Parse review_notes JSON into (review_comment, key_concerns, suggestions).
+    Falls back gracefully if notes is plain text."""
+    import json as _json
+    try:
+        data = _json.loads(notes)
+        return (
+            data.get("review_comment", notes),
+            data.get("key_concerns", []),
+            data.get("suggestions", ""),
+        )
+    except (_json.JSONDecodeError, TypeError):
+        return notes, [], ""
+
+
+_DECISION_LABEL = {
+    "approve": "✅ 承認",
+    "revise": "📝 要修正",
+    "escalate": "⚠️ エスカレーション",
+}
+
+
 def render_review_comment_card(decision: str, next_action: str, count: int, notes: str) -> None:
+    review_comment, key_concerns, suggestions = _parse_review_notes(notes)
+    decision_label = _DECISION_LABEL.get(decision, html.escape(decision))
+
     st.markdown(
         f"""
         <div class="review-memo">
             <div class="review-meta-card">
                 <div class="review-meta-label">レビュー判断</div>
-                <div class="review-meta-value">{html.escape(decision)}</div>
+                <div class="review-meta-value">{decision_label}</div>
                 <div class="review-meta-label">次の段階</div>
                 <div class="review-meta-value">{html.escape(next_action)}</div>
                 <div class="review-meta-label">反復履歴</div>
@@ -981,12 +1008,19 @@ def render_review_comment_card(decision: str, next_action: str, count: int, note
                     <div class="review-note-title">内山 agent コメント</div>
                     <div class="review-note-badge">Review Memo</div>
                 </div>
-                <div class="review-note-body">{html.escape(notes).replace(chr(10), '<br>')}</div>
+                <div class="review-note-body">{html.escape(review_comment).replace(chr(10), "<br>")}</div>
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    if key_concerns:
+        st.markdown("**指摘ポイント**")
+        for concern in key_concerns:
+            st.markdown(f"- {concern}")
+    if suggestions:
+        st.markdown("**修正提案**")
+        st.info(suggestions)
 
 
 def format_ticket_label(ticket) -> str:
@@ -1036,11 +1070,11 @@ def main() -> None:
             with st.form("create_ticket_form", clear_on_submit=True):
                 now_code = datetime.now().strftime("sp-%Y%m%d%H%M%S")
                 external_id = st.text_input("外部ID", value=now_code)
-                customer_email = st.text_input("顧客メール", value="customer@example.com")
-                subject = st.text_input("件名", value="検索結果に文書が表示されない")
+                customer_email = st.text_input("顧客メール", placeholder="例：customer@example.com")
+                subject = st.text_input("件名", placeholder="問い合わせの件名を入力してください")
                 body = st.text_area(
                     "問い合わせ内容",
-                    value="DocuWare 上で検索結果に期待した文書が表示されません。検索条件と権限を確認したいです。",
+                    placeholder="顧客からの問い合わせ内容を入力してください",
                     height=160,
                 )
                 source = st.selectbox("流入元", ["dashboard", "email", "portal", "phone"], index=0)
@@ -1203,8 +1237,8 @@ def main() -> None:
                     [
                         {
                             "反復": step.iteration,
-                            "判断": step.decision or "-",
-                            "レビュー内容": step.review_notes,
+                            "判断": _DECISION_LABEL.get(step.decision or "", step.decision or "-"),
+                            "レビュー内容": _parse_review_notes(step.review_notes)[0],
                         }
                         for step in iteration_history
                     ]

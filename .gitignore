@@ -38,3 +38,4 @@ build/
 *.egg-info/
 
 streamlit.log
+scripts/failed_urls.log

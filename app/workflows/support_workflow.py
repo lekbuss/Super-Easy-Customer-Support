@@ -1,3 +1,4 @@
+import json
 from typing import Any, Literal, TypedDict
 
 try:
@@ -62,7 +63,12 @@ def main_agent_node(state: SupportState) -> SupportState:
 
 def review_agent_node(state: SupportState) -> SupportState:
     try:
-        decision, notes = review_draft(state["draft_response"], state["iteration"])
+        decision, notes = review_draft(
+            state["draft_response"],
+            state["iteration"],
+            ticket_subject=state.get("subject", ""),
+            ticket_body=state.get("body", ""),
+        )
         history = [
             *state["iteration_history"],
             {
@@ -91,13 +97,26 @@ def review_agent_node(state: SupportState) -> SupportState:
         }
 
 
+def _readable_review_notes(notes_json: str) -> str:
+    """Extract human-readable text from JSON review notes for use in revision prompts."""
+    try:
+        data = json.loads(notes_json)
+        comment = data.get("review_comment", "")
+        suggestions = data.get("suggestions", "")
+        if suggestions:
+            return f"{comment}\n\n修正提案: {suggestions}"
+        return comment
+    except (json.JSONDecodeError, TypeError):
+        return notes_json
+
+
 def revise_node(state: SupportState) -> SupportState:
     try:
         revised_draft = generate_draft(
             ticket_subject=state["subject"],
             ticket_body=state["body"],
             previous_draft=state["draft_response"],
-            review_notes=state["review_notes"],
+            review_notes=_readable_review_notes(state["review_notes"]),
         )
         return {
             **state,
