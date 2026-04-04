@@ -6,7 +6,6 @@ import html
 import sys
 import time
 
-import pandas as pd
 import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -16,12 +15,10 @@ if project_root_str not in sys.path:
 
 from app.db.base import Base
 from app.db.session import SessionLocal, engine, ensure_sqlite_schema
-from app.services.draft_service import build_workflow_drafts
 from app.services.ticket_service import create_ticket, get_ticket_by_id, list_tickets
 from app.services.workflow_service import (
     approve_workflow_run,
     generate_inquiry_email,
-    get_approval_actions,
     get_iteration_history,
     get_workflow_run,
     list_workflow_runs_for_ticket,
@@ -1481,15 +1478,11 @@ def main() -> None:
         selected_ticket = get_ticket_by_id(db, st.session_state.selected_ticket_id)
         selected_run = None
         iteration_history = []
-        approval_actions = []
-        drafts = None
 
         if st.session_state.selected_workflow_run_id is not None:
             selected_run = get_workflow_run(db, st.session_state.selected_workflow_run_id)
             if selected_run is not None:
                 iteration_history = get_iteration_history(db, selected_run.id)
-                approval_actions = get_approval_actions(db, selected_run.id)
-                drafts = build_workflow_drafts(db, selected_run.id)
 
         first_step = iteration_history[0] if iteration_history else None
         first_draft = first_step.draft_response if first_step else None
@@ -1661,64 +1654,6 @@ def main() -> None:
 
         close_flow_stage()
 
-        render_flow_stage("05", T("stage.approval.kicker"), T("stage.approval.title"), T("stage.approval.copy"), active=active_stage == "05")
-        approval_left, approval_right = st.columns([0.72, 1.28], gap="large")
-        with approval_left:
-            if selected_run is None:
-                st.info(T("approval.no_run"))
-            else:
-                if approval_actions:
-                    approval_df = pd.DataFrame(
-                        [
-                            {
-                                T("approval.col.approver"): item.approver,
-                                T("approval.col.action"): item.action,
-                                T("approval.col.notes"): item.notes or "-",
-                                T("approval.col.datetime"): item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "-",
-                            }
-                            for item in approval_actions
-                        ]
-                    )
-                    st.dataframe(approval_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info(T("approval.no_history"))
-
-                needs_approval = getattr(selected_run.status, "value", str(selected_run.status)) == "needs_human_approval"
-                with st.form("approval_form"):
-                    approver = st.text_input(T("approval.approver"), value="team.lead@company.com")
-                    notes = st.text_input(T("approval.notes"), value=T("approval.notes_default"))
-                    approved = st.form_submit_button(T("approval.submit"), disabled=not needs_approval)
-
-                if not needs_approval:
-                    st.caption(T("approval.not_needed"))
-                elif approved:
-                    approve_workflow_run(
-                        db=db,
-                        workflow_run_id=selected_run.id,
-                        approver=approver.strip(),
-                        notes=notes.strip(),
-                    )
-                    st.success(T("approval.saved"))
-                    st.rerun()
-
-        with approval_right:
-            if drafts is None:
-                st.info(T("approval.no_drafts"))
-            else:
-                customer_reply = drafts.get("customer_reply_draft") or T("approval.no_customer")
-                vendor_reply = drafts.get("vendor_escalation_draft") or T("approval.no_vendor")
-                internal_summary = drafts.get("internal_summary") or T("approval.no_summary")
-                out1, out2, out3 = st.tabs([T("approval.tab.customer"), T("approval.tab.vendor"), T("approval.tab.summary")])
-                with out1:
-                    render_reading_block(customer_reply)
-                    render_copy_button(customer_reply, "customer-reply")
-                with out2:
-                    render_reading_block(vendor_reply)
-                    render_copy_button(vendor_reply, "vendor-reply")
-                with out3:
-                    render_reading_block(internal_summary)
-                    render_copy_button(internal_summary, "internal-summary")
-        close_flow_stage()
 
 
 if __name__ == "__main__":
