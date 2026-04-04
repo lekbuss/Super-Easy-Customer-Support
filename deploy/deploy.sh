@@ -12,7 +12,8 @@ echo "=== Starting deployment ==="
 cd $PROJECT_DIR
 
 echo ">>> Pulling latest code..."
-git pull origin main
+git fetch origin
+git reset --hard origin/main
 
 echo ">>> Installing dependencies..."
 source $VENV/activate
