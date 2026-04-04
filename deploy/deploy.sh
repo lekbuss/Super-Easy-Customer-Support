@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-PROJECT_DIR="/home/azureuser/Super-Easy-Customer-Support/project"
+PROJECT_DIR="/home/azureuser/Super-Easy-Customer-Support"
 
 echo "=== Starting deployment ==="
 
