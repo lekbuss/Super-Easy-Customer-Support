@@ -1,0 +1,20 @@
+name: Deploy to Azure VM
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to Azure VM via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_VM_SSH_KEY }}
+          script: |
+            cd /home/azureuser/Super-Easy-Customer-Support/project
+            source .venv/bin/activate
+            bash /home/azureuser/Super-Easy-Customer-Support/project/deploy/deploy.sh

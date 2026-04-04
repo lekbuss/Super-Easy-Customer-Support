@@ -30,31 +30,173 @@ from app.services.workflow_service import (
 
 st.set_page_config(page_title="超絶カンタン問い合わせ対応", layout="wide")
 
+# ---------------------------------------------------------------------------
+# i18n
+# ---------------------------------------------------------------------------
 
-STATUS_LABELS = {
-    "approved": "承認済み",
-    "needs_human_approval": "承認待ち",
-    "drafting": "ドラフト生成中",
-    "reviewing": "レビュー中",
-    "revise": "修正対応",
-    "escalated": "エスカレーション",
-    "failed": "失敗",
-    "received": "受付済み",
+_I18N: dict[str, dict[str, str]] = {
+    # ---- Status labels ----
+    "status.approved":              {"ja": "承認済み",         "zh": "已批准",       "en": "Approved"},
+    "status.needs_human_approval":  {"ja": "承認待ち",         "zh": "待人工审批",    "en": "Pending Approval"},
+    "status.drafting":              {"ja": "ドラフト生成中",    "zh": "起草中",       "en": "Drafting"},
+    "status.reviewing":             {"ja": "レビュー中",       "zh": "审核中",       "en": "Reviewing"},
+    "status.revise":                {"ja": "修正対応",         "zh": "需修改",       "en": "Revise"},
+    "status.escalated":             {"ja": "エスカレーション", "zh": "已升级",       "en": "Escalated"},
+    "status.failed":                {"ja": "失敗",             "zh": "失败",         "en": "Failed"},
+    "status.received":              {"ja": "受付済み",         "zh": "已收到",       "en": "Received"},
+    # ---- Next action labels ----
+    "action.await_human_approval":      {"ja": "承認待ち",             "zh": "等待人工审批",   "en": "Awaiting Approval"},
+    "action.review_draft":              {"ja": "初回レビュー",          "zh": "初次审核",       "en": "Review Draft"},
+    "action.review_revised_draft":      {"ja": "再レビュー",            "zh": "再次审核",       "en": "Review Revised Draft"},
+    "action.generate_initial_draft":    {"ja": "初回ドラフト生成",      "zh": "生成初稿",       "en": "Generate Initial Draft"},
+    "action.manual_triage":             {"ja": "手動トリアージ",        "zh": "手动分诊",       "en": "Manual Triage"},
+    "action.assign_to_human_specialist":{"ja": "担当者へ引き継ぎ",      "zh": "移交专员",       "en": "Assign to Specialist"},
+    "action.route_approve":             {"ja": "承認ルートへ進行",      "zh": "进入审批流程",   "en": "Route to Approve"},
+    "action.route_revise":              {"ja": "修正ルートへ進行",      "zh": "进入修改流程",   "en": "Route to Revise"},
+    "action.route_escalate":            {"ja": "エスカレーション対応",  "zh": "升级处理",       "en": "Route to Escalate"},
+    "action.ready_for_sending_stage":   {"ja": "送信準備完了",          "zh": "待发送",         "en": "Ready for Sending"},
+    "action.iteration_recorded":        {"ja": "履歴保存済み",          "zh": "已记录迭代",     "en": "Iteration Recorded"},
+    # ---- Page / section labels ----
+    "page.title":           {"ja": "超絶カンタン問い合わせ対応",  "zh": "超简单工单对应系统",        "en": "Super Easy Customer Support"},
+    "page.eyebrow":         {"ja": "DOCUWARE / SUPPORT FLOW",    "zh": "DOCUWARE / 支持流程",       "en": "DOCUWARE / SUPPORT FLOW"},
+    "page.subtitle":        {"ja": "起票内容の確認から、初回回答、内山 agent のレビュー、修正版の確定までを上から順に追える構成にしています。現在のアーカイブ件数は {n} 件です。",
+                             "zh": "从工单确认、初次回复、内山 Agent 审核到最终修订版，可从上至下逐步追踪。当前存档共 {n} 件。",
+                             "en": "Track the full flow from ticket review, initial draft, Uchiyama Agent review, to final approval — top to bottom. Archive: {n} tickets."},
+    "panel.intake.title":   {"ja": "チケット作成",       "zh": "创建工单",       "en": "Create Ticket"},
+    "panel.intake.desc":    {"ja": "新しい問い合わせを登録して、すぐ下のフロー表示で追跡できます。",
+                             "zh": "注册新问题，可在下方流程视图中实时追踪。",
+                             "en": "Register a new inquiry and track it in the flow below."},
+    "panel.archive.title":  {"ja": "監視対象チケット",   "zh": "监视工单",       "en": "Monitored Tickets"},
+    "panel.archive.desc":   {"ja": "上から順にフローを確認できるよう、対象チケットと実行履歴をここで切り替えます。",
+                             "zh": "在此切换目标工单和执行历史，按顺序查看流程。",
+                             "en": "Switch between tickets and run history to follow the flow in order."},
+    # ---- Form fields ----
+    "form.external_id":         {"ja": "外部ID",          "zh": "外部ID",       "en": "External ID"},
+    "form.customer_email":      {"ja": "顧客メール",       "zh": "客户邮箱",     "en": "Customer Email"},
+    "form.email_placeholder":   {"ja": "例：customer@example.com", "zh": "例：customer@example.com", "en": "e.g. customer@example.com"},
+    "form.subject":             {"ja": "件名",             "zh": "主题",         "en": "Subject"},
+    "form.subject_placeholder": {"ja": "問い合わせの件名を入力してください", "zh": "请输入问题主题", "en": "Enter inquiry subject"},
+    "form.body":                {"ja": "問い合わせ内容",   "zh": "问题内容",     "en": "Inquiry Details"},
+    "form.body_placeholder":    {"ja": "顧客からの問い合わせ内容を入力してください", "zh": "请输入客户问题详情", "en": "Enter customer inquiry details"},
+    "form.source":              {"ja": "流入元",           "zh": "来源渠道",     "en": "Source"},
+    "form.save_ticket":         {"ja": "チケットを保存",   "zh": "保存工单",     "en": "Save Ticket"},
+    "form.ticket_saved":        {"ja": "チケットを作成しました。", "zh": "工单已创建。", "en": "Ticket created."},
+    # ---- Archive panel ----
+    "archive.target_ticket":    {"ja": "対象チケット",     "zh": "目标工单",     "en": "Target Ticket"},
+    "archive.run_workflow":     {"ja": "ワークフローを実行", "zh": "执行工作流",  "en": "Run Workflow"},
+    "archive.display_run":      {"ja": "表示する実行",     "zh": "查看执行",     "en": "Display Run"},
+    "archive.no_runs":          {"ja": "まだワークフロー実行はありません。", "zh": "暂无工作流执行记录。", "en": "No workflow runs yet."},
+    "archive.no_tickets":       {"ja": "先にチケットを1件作成してください。", "zh": "请先创建一个工单。", "en": "Please create a ticket first."},
+    "archive.running_title":    {"ja": "ワークフローを実行しています", "zh": "正在执行工作流", "en": "Running Workflow"},
+    "archive.running_copy":     {"ja": "チケットの解析、ドラフト生成、レビュー判定、履歴保存を順番に進めています。完了後に右側のアーカイブへ最新実行が反映されます。",
+                                 "zh": "正在依次进行工单分析、草稿生成、审核判断和历史保存。完成后最新执行将反映在右侧存档中。",
+                                 "en": "Processing ticket analysis, draft generation, review decision, and history save in order. The latest run will appear in the archive when done."},
+    "archive.running_spinner":  {"ja": "ワークフローを実行しています...", "zh": "工作流执行中...", "en": "Running workflow..."},
+    "archive.run_saved":        {"ja": "実行 #{n} を保存しました。", "zh": "已保存执行 #{n}。", "en": "Run #{n} saved."},
+    # ---- Monitor stage ----
+    "stage.monitor.kicker":     {"ja": "monitor",          "zh": "监控",         "en": "monitor"},
+    "stage.monitor.title":      {"ja": "起票内容の監視",   "zh": "工单内容监控", "en": "Ticket Monitor"},
+    "stage.monitor.copy":       {"ja": "対象チケットの内容と現在ステータスをここで確認し、そのままワークフローを実行できます。",
+                                 "zh": "在此查看目标工单内容和当前状态，可直接执行工作流。",
+                                 "en": "Review the ticket content and current status, then run the workflow directly from here."},
+    "monitor.subject":          {"ja": "件名",             "zh": "主题",         "en": "Subject"},
+    "monitor.body":             {"ja": "問い合わせ内容",   "zh": "问题内容",     "en": "Inquiry Details"},
+    "monitor.status":           {"ja": "現在のステータス", "zh": "当前状态",     "en": "Current Status"},
+    "monitor.next_action":      {"ja": "次のアクション",   "zh": "下一步操作",   "en": "Next Action"},
+    "monitor.iterations":       {"ja": "反復回数",         "zh": "迭代次数",     "en": "Iterations"},
+    "monitor.tracking":         {"ja": "監視対象",         "zh": "监控对象",     "en": "Tracking"},
+    # ---- Flow stages ----
+    "stage.draft.kicker":       {"ja": "first response",  "zh": "初次回复",     "en": "first response"},
+    "stage.draft.title":        {"ja": "生成された初回回答", "zh": "生成的初次回复", "en": "Generated Initial Draft"},
+    "stage.draft.copy":         {"ja": "ワークフローが最初に作成した返信案です。ここがレビュー前のベースになります。",
+                                 "zh": "这是工作流生成的第一版回复草稿，是审核前的基础版本。",
+                                 "en": "The first reply draft created by the workflow. This is the base before review."},
+    "stage.draft.empty":        {"ja": "ワークフロー実行後に初回回答が表示されます。", "zh": "执行工作流后将显示初次回复。", "en": "Initial draft will appear after running the workflow."},
+    "stage.draft.no_content":   {"ja": "まだ初回回答は生成されていません。", "zh": "初次回复尚未生成。", "en": "No initial draft generated yet."},
+    "stage.review.kicker":      {"ja": "uchiyama agent",  "zh": "内山 Agent",   "en": "uchiyama agent"},
+    "stage.review.title":       {"ja": "内山 agent のレビュー意見", "zh": "内山 Agent 审核意见", "en": "Uchiyama Agent Review"},
+    "stage.review.copy":        {"ja": "初回回答をレビューした結果の判断とコメントを表示します。必要ならこのあと修正版へ進みます。",
+                                 "zh": "显示对初次回复的审核判断和评论。如有需要将进入修改版。",
+                                 "en": "Shows the review decision and comments on the initial draft. A revised version will follow if needed."},
+    "stage.review.empty":       {"ja": "ワークフロー実行後にレビュー結果が表示されます。", "zh": "执行工作流后将显示审核结果。", "en": "Review results will appear after running the workflow."},
+    "stage.review.no_comment":  {"ja": "まだレビューコメントはありません。", "zh": "暂无审核评论。", "en": "No review comments yet."},
+    "stage.review.concerns":    {"ja": "指摘ポイント",     "zh": "指摘要点",     "en": "Key Concerns"},
+    "stage.review.suggestions": {"ja": "修正提案",         "zh": "修改建议",     "en": "Suggestions"},
+    "review.iteration":         {"ja": "反復",             "zh": "迭代",         "en": "Iteration"},
+    "review.decision":          {"ja": "判断",             "zh": "判断",         "en": "Decision"},
+    "review.content":           {"ja": "レビュー内容",     "zh": "审核内容",     "en": "Review Content"},
+    "stage.revision.kicker":    {"ja": "revised answer",  "zh": "修改后回复",   "en": "revised answer"},
+    "stage.revision.title":     {"ja": "修正後の回答",     "zh": "修改后的回复", "en": "Revised Answer"},
+    "stage.revision.copy":      {"ja": "レビュー指摘を踏まえて整えた最終回答です。承認対象ならこの下でサインオフできます。",
+                                 "zh": "根据审核意见整理后的最终回复。如需审批，可在下方签核。",
+                                 "en": "The final answer refined based on review feedback. Sign off below if ready for approval."},
+    "stage.revision.empty":     {"ja": "ワークフロー実行後に修正後の回答が表示されます。", "zh": "执行工作流后将显示修改后的回复。", "en": "Revised answer will appear after running the workflow."},
+    "stage.revision.no_content":{"ja": "まだ修正後の回答はありません。", "zh": "暂无修改后的回复。", "en": "No revised answer yet."},
+    # ---- Approval stage ----
+    "stage.approval.kicker":    {"ja": "approval",        "zh": "审批",         "en": "approval"},
+    "stage.approval.title":     {"ja": "承認と補助アウトプット", "zh": "审批与辅助输出", "en": "Approval & Outputs"},
+    "stage.approval.copy":      {"ja": "最終回答の承認と、顧客返信・連携メモ・社内要約の確認をここでまとめて行います。",
+                                 "zh": "在此完成最终回复的审批，并查看客户回复、协作备注和内部摘要。",
+                                 "en": "Approve the final answer and review the customer reply, vendor memo, and internal summary here."},
+    "approval.no_run":          {"ja": "承認対象の実行がありません。", "zh": "没有待审批的执行记录。", "en": "No run pending approval."},
+    "approval.no_history":      {"ja": "承認履歴はまだ記録されていません。", "zh": "暂无审批历史记录。", "en": "No approval history recorded yet."},
+    "approval.approver":        {"ja": "承認者",           "zh": "审批人",       "en": "Approver"},
+    "approval.notes":           {"ja": "承認メモ",         "zh": "审批备注",     "en": "Approval Notes"},
+    "approval.submit":          {"ja": "承認する",         "zh": "批准",         "en": "Approve"},
+    "approval.not_needed":      {"ja": "この実行は現在、追加承認の対象ではありません。", "zh": "此执行当前不需要额外审批。", "en": "This run does not require additional approval."},
+    "approval.saved":           {"ja": "承認を保存しました。", "zh": "审批已保存。", "en": "Approval saved."},
+    "approval.col.approver":    {"ja": "承認者",           "zh": "审批人",       "en": "Approver"},
+    "approval.col.action":      {"ja": "アクション",       "zh": "操作",         "en": "Action"},
+    "approval.col.notes":       {"ja": "メモ",             "zh": "备注",         "en": "Notes"},
+    "approval.col.datetime":    {"ja": "日時",             "zh": "时间",         "en": "Date/Time"},
+    "approval.tab.customer":    {"ja": "顧客返信",         "zh": "客户回复",     "en": "Customer Reply"},
+    "approval.tab.vendor":      {"ja": "連携メモ",         "zh": "协作备注",     "en": "Vendor Memo"},
+    "approval.tab.summary":     {"ja": "社内要約",         "zh": "内部摘要",     "en": "Internal Summary"},
+    "approval.no_drafts":       {"ja": "ワークフロー実行後に補助アウトプットが表示されます。", "zh": "执行工作流后将显示辅助输出。", "en": "Outputs will appear after running the workflow."},
+    "approval.no_customer":     {"ja": "顧客向け返信はまだ生成されていません。", "zh": "客户回复尚未生成。", "en": "Customer reply not generated yet."},
+    "approval.no_vendor":       {"ja": "ベンダー連携メモはまだありません。", "zh": "协作备注尚未生成。", "en": "Vendor memo not available yet."},
+    "approval.no_summary":      {"ja": "社内要約はまだありません。", "zh": "内部摘要尚未生成。", "en": "Internal summary not available yet."},
+    # ---- Lang switcher ----
+    "lang.ja": {"ja": "日", "zh": "日", "en": "JP"},
+    "lang.zh": {"ja": "中", "zh": "中", "en": "CN"},
+    "lang.en": {"ja": "英", "zh": "英", "en": "EN"},
+    # ---- Decision labels ----
+    "decision.approve":   {"ja": "✅ 承認",            "zh": "✅ 批准",   "en": "✅ Approve"},
+    "decision.revise":    {"ja": "📝 要修正",           "zh": "📝 需修改", "en": "📝 Revise"},
+    "decision.escalate":  {"ja": "⚠️ エスカレーション", "zh": "⚠️ 已升级", "en": "⚠️ Escalate"},
+    # ---- Review card labels ----
+    "review.decision_label":  {"ja": "レビュー判断",     "zh": "审核判断",   "en": "Review Decision"},
+    "review.next_stage":      {"ja": "次の段階",         "zh": "下一阶段",   "en": "Next Stage"},
+    "review.iter_history":    {"ja": "反復履歴",         "zh": "迭代历史",   "en": "Iteration History"},
+    "review.agent_comment":   {"ja": "内山 agent コメント", "zh": "内山 Agent 评论", "en": "Uchiyama Agent Comment"},
+    # ---- Copy button ----
+    "copy.button":  {"ja": "テキストをコピー", "zh": "复制文本", "en": "Copy Text"},
+    "copy.done":    {"ja": "コピーしました",   "zh": "已复制",   "en": "Copied!"},
+    # ---- Run label ----
+    "run.label":    {"ja": "実行",   "zh": "执行",   "en": "Run"},
+    # ---- Approval defaults ----
+    "approval.notes_default":  {"ja": "送信して問題ありません。", "zh": "确认无误，可发送。", "en": "Looks good, ready to send."},
+    "approval.count_suffix":   {"ja": "件",   "zh": "条",   "en": ""},
 }
 
-NEXT_ACTION_LABELS = {
-    "await_human_approval": "承認待ち",
-    "review_draft": "初回レビュー",
-    "review_revised_draft": "再レビュー",
-    "generate_initial_draft": "初回ドラフト生成",
-    "manual_triage": "手動トリアージ",
-    "assign_to_human_specialist": "担当者へ引き継ぎ",
-    "route_approve": "承認ルートへ進行",
-    "route_revise": "修正ルートへ進行",
-    "route_escalate": "エスカレーション対応",
-    "ready_for_sending_stage": "送信準備完了",
-    "iteration_recorded": "履歴保存済み",
-}
+
+def T(key: str, **kwargs) -> str:  # noqa: N802
+    """Return the translated string for the current session language."""
+    lang = st.session_state.get("lang", "ja")
+    text = _I18N.get(key, {}).get(lang, _I18N.get(key, {}).get("ja", key))
+    return text.format(**kwargs) if kwargs else text
+
+
+def _status_labels() -> dict[str, str]:
+    return {k.split("status.")[-1]: T(k) for k in _I18N if k.startswith("status.")}
+
+
+def _next_action_labels() -> dict[str, str]:
+    return {k.split("action.")[-1]: T(k) for k in _I18N if k.startswith("action.")}
+
+
+STATUS_LABELS: dict[str, str] = {}   # populated per-render via _status_labels()
+NEXT_ACTION_LABELS: dict[str, str] = {}  # populated per-render via _next_action_labels()
 
 
 def apply_custom_theme() -> None:
@@ -839,13 +981,15 @@ def panel_end() -> None:
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_copy_button(text: str, key: str, label: str = "テキストをコピー") -> None:
+def render_copy_button(text: str, key: str, label: str | None = None) -> None:
+    btn_label = label if label is not None else T("copy.button")
+    done_label = T("copy.done")
     payload = html.escape(text).replace("\n", "&#10;").replace("'", "&#39;")
     st.markdown(
         f"""
         <div class="reading-actions">
-            <button class="copy-button" onclick="navigator.clipboard.writeText('{payload}').then(() => {{ const el = document.getElementById('copy-{key}'); if (el) el.innerText = 'コピーしました'; }});">
-                {html.escape(label)}
+            <button class="copy-button" onclick="navigator.clipboard.writeText('{payload}').then(() => {{ const el = document.getElementById('copy-{key}'); if (el) el.innerText = '{html.escape(done_label)}'; }});">
+                {html.escape(btn_label)}
             </button>
             <span id="copy-{key}" class="copy-feedback"></span>
         </div>
@@ -860,12 +1004,14 @@ def render_reading_block(text: str) -> None:
 
 
 def render_workflow_running_card() -> None:
+    title = html.escape(T("archive.running_title"))
+    copy = html.escape(T("archive.running_copy"))
     st.markdown(
-        """
+        f"""
         <div class="workflow-running">
             <div class="workflow-dots"><span></span><span></span><span></span></div>
-            <div class="workflow-running-title">ワークフローを実行しています</div>
-            <div class="workflow-running-copy">チケットの解析、ドラフト生成、レビュー判定、履歴保存を順番に進めています。完了後に右側のアーカイブへ最新実行が反映されます。</div>
+            <div class="workflow-running-title">{title}</div>
+            <div class="workflow-running-copy">{copy}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -885,14 +1031,14 @@ def status_badge_html(status: str | None) -> str:
     }
     key = status or "received"
     bg, color = palette.get(key, ("var(--neutral-bg)", "var(--neutral-text)"))
-    label = STATUS_LABELS.get(key, key.replace("_", " ").title())
+    label = _status_labels().get(key, key.replace("_", " ").title())
     return f"<span class='status-pill' style='background:{bg}; color:{color};'>{html.escape(label)}</span>"
 
 
 def next_action_label(action: str | None) -> str:
     if not action:
         return "-"
-    return NEXT_ACTION_LABELS.get(action, action.replace("_", " ").title())
+    return _next_action_labels().get(action, action.replace("_", " ").title())
 
 
 def render_metric_card(label: str, content: str, large: bool = False) -> None:
@@ -909,14 +1055,14 @@ def render_metric_card(label: str, content: str, large: bool = False) -> None:
 
 
 def render_page_intro(ticket_count: int) -> None:
+    eyebrow = html.escape(T("page.eyebrow"))
+    title = html.escape(T("page.title"))
+    subtitle = html.escape(T("page.subtitle", n=ticket_count))
     st.markdown(
         f"""
-        <div class="eyebrow">DOCUWARE / SUPPORT FLOW</div>
-        <h1 class="page-title">超絶カンタン問い合わせ対応</h1>
-        <div class="page-subtitle">
-            起票内容の確認から、初回回答、内山 agent のレビュー、修正版の確定までを
-            上から順に追える構成にしています。現在のアーカイブ件数は {ticket_count} 件です。
-        </div>
+        <div class="eyebrow">{eyebrow}</div>
+        <h1 class="page-title">{title}</h1>
+        <div class="page-subtitle">{subtitle}</div>
         """,
         unsafe_allow_html=True,
     )
@@ -981,31 +1127,30 @@ def _parse_review_notes(notes: str) -> tuple[str, list[str], str]:
         return notes, [], ""
 
 
-_DECISION_LABEL = {
-    "approve": "✅ 承認",
-    "revise": "📝 要修正",
-    "escalate": "⚠️ エスカレーション",
-}
+def _decision_label(decision: str) -> str:
+    key = f"decision.{decision}"
+    return T(key) if key in _I18N else decision
 
 
 def render_review_comment_card(decision: str, next_action: str, count: int, notes: str) -> None:
     review_comment, key_concerns, suggestions = _parse_review_notes(notes)
-    decision_label = _DECISION_LABEL.get(decision, html.escape(decision))
+    decision_label = _decision_label(decision) if decision else html.escape(decision)
 
+    count_str = f"{count} {T('approval.count_suffix')}".strip()
     st.markdown(
         f"""
         <div class="review-memo">
             <div class="review-meta-card">
-                <div class="review-meta-label">レビュー判断</div>
+                <div class="review-meta-label">{html.escape(T('review.decision_label'))}</div>
                 <div class="review-meta-value">{decision_label}</div>
-                <div class="review-meta-label">次の段階</div>
+                <div class="review-meta-label">{html.escape(T('review.next_stage'))}</div>
                 <div class="review-meta-value">{html.escape(next_action)}</div>
-                <div class="review-meta-label">反復履歴</div>
-                <div class="review-meta-value">{count} 件</div>
+                <div class="review-meta-label">{html.escape(T('review.iter_history'))}</div>
+                <div class="review-meta-value">{count_str}</div>
             </div>
             <div class="review-note-card">
                 <div class="review-note-header">
-                    <div class="review-note-title">内山 agent コメント</div>
+                    <div class="review-note-title">{html.escape(T('review.agent_comment'))}</div>
                     <div class="review-note-badge">Review Memo</div>
                 </div>
                 <div class="review-note-body">{html.escape(review_comment).replace(chr(10), "<br>")}</div>
@@ -1015,11 +1160,11 @@ def render_review_comment_card(decision: str, next_action: str, count: int, note
         unsafe_allow_html=True,
     )
     if key_concerns:
-        st.markdown("**指摘ポイント**")
+        st.markdown(f"**{T('stage.review.concerns')}**")
         for concern in key_concerns:
             st.markdown(f"- {concern}")
     if suggestions:
-        st.markdown("**修正提案**")
+        st.markdown(f"**{T('stage.review.suggestions')}**")
         st.info(suggestions)
 
 
@@ -1030,8 +1175,8 @@ def format_ticket_label(ticket) -> str:
 
 def format_workflow_label(run) -> str:
     created = run.created_at.strftime("%m/%d %H:%M") if run.created_at else "-"
-    status = STATUS_LABELS.get(getattr(run.status, "value", str(run.status)), str(run.status))
-    return f"実行 #{run.id} / {status} / {created}"
+    status = _status_labels().get(getattr(run.status, "value", str(run.status)), str(run.status))
+    return f"{T('run.label')} #{run.id} / {status} / {created}"
 
 
 def init_state() -> None:
@@ -1040,6 +1185,7 @@ def init_state() -> None:
         "selected_workflow_run_id": None,
         "workflow_running": False,
         "pending_workflow_ticket_id": None,
+        "lang": "ja",
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -1061,24 +1207,41 @@ def main() -> None:
         if tickets and st.session_state.selected_ticket_id is None:
             st.session_state.selected_ticket_id = tickets[0].id
 
+        # Language switcher (top-right)
+        _, _lang_col = st.columns([5, 1])
+        with _lang_col:
+            _c1, _c2, _c3 = st.columns(3)
+            with _c1:
+                if st.button(T("lang.ja"), key="lang_ja", use_container_width=True):
+                    st.session_state.lang = "ja"
+                    st.rerun()
+            with _c2:
+                if st.button(T("lang.zh"), key="lang_zh", use_container_width=True):
+                    st.session_state.lang = "zh"
+                    st.rerun()
+            with _c3:
+                if st.button(T("lang.en"), key="lang_en", use_container_width=True):
+                    st.session_state.lang = "en"
+                    st.rerun()
+
         render_page_intro(len(tickets))
 
         control_left, control_right = st.columns([0.78, 1.22], gap="large")
 
         with control_left:
-            panel_start("intake", "チケット作成", "新しい問い合わせを登録して、すぐ下のフロー表示で追跡できます。")
+            panel_start(T("page.eyebrow"), T("panel.intake.title"), T("panel.intake.desc"))
             with st.form("create_ticket_form", clear_on_submit=True):
                 now_code = datetime.now().strftime("sp-%Y%m%d%H%M%S")
-                external_id = st.text_input("外部ID", value=now_code)
-                customer_email = st.text_input("顧客メール", placeholder="例：customer@example.com")
-                subject = st.text_input("件名", placeholder="問い合わせの件名を入力してください")
+                external_id = st.text_input(T("form.external_id"), value=now_code)
+                customer_email = st.text_input(T("form.customer_email"), placeholder=T("form.email_placeholder"))
+                subject = st.text_input(T("form.subject"), placeholder=T("form.subject_placeholder"))
                 body = st.text_area(
-                    "問い合わせ内容",
-                    placeholder="顧客からの問い合わせ内容を入力してください",
+                    T("form.body"),
+                    placeholder=T("form.body_placeholder"),
                     height=160,
                 )
-                source = st.selectbox("流入元", ["dashboard", "email", "portal", "phone"], index=0)
-                submitted = st.form_submit_button("チケットを保存")
+                source = st.selectbox(T("form.source"), ["dashboard", "email", "portal", "phone"], index=0)
+                submitted = st.form_submit_button(T("form.save_ticket"))
 
             if submitted:
                 new_ticket = create_ticket(
@@ -1091,12 +1254,12 @@ def main() -> None:
                 )
                 st.session_state.selected_ticket_id = new_ticket.id
                 st.session_state.selected_workflow_run_id = None
-                st.success("チケットを作成しました。")
+                st.success(T("form.ticket_saved"))
                 st.rerun()
             panel_end()
 
         with control_right:
-            panel_start("archive", "監視対象チケット", "上から順にフローを確認できるよう、対象チケットと実行履歴をここで切り替えます。")
+            panel_start(T("page.eyebrow"), T("panel.archive.title"), T("panel.archive.desc"))
             if tickets:
                 ticket_ids = [ticket.id for ticket in tickets]
                 current_ticket_id = st.session_state.selected_ticket_id
@@ -1105,7 +1268,7 @@ def main() -> None:
                     st.session_state.selected_ticket_id = current_ticket_id
 
                 selected_ticket_id = st.selectbox(
-                    "対象チケット",
+                    T("archive.target_ticket"),
                     options=ticket_ids,
                     index=ticket_ids.index(current_ticket_id),
                     format_func=lambda ticket_id: format_ticket_label(next(ticket for ticket in tickets if ticket.id == ticket_id)),
@@ -1113,7 +1276,7 @@ def main() -> None:
                 )
                 st.session_state.selected_ticket_id = selected_ticket_id
 
-                if st.button("ワークフローを実行", key="run_workflow_button", use_container_width=True):
+                if st.button(T("archive.run_workflow"), key="run_workflow_button", use_container_width=True):
                     st.session_state.workflow_running = True
                     st.session_state.pending_workflow_ticket_id = selected_ticket_id
                     st.rerun()
@@ -1123,13 +1286,13 @@ def main() -> None:
                     and st.session_state.pending_workflow_ticket_id == selected_ticket_id
                 ):
                     render_workflow_running_card()
-                    with st.spinner("ワークフローを実行しています..."):
+                    with st.spinner(T("archive.running_spinner")):
                         time.sleep(0.4)
                         workflow_run, _ = run_and_persist_workflow_for_ticket(db=db, ticket_id=selected_ticket_id)
                     st.session_state.selected_workflow_run_id = workflow_run.id
                     st.session_state.workflow_running = False
                     st.session_state.pending_workflow_ticket_id = None
-                    st.success(f"実行 #{workflow_run.id} を保存しました。")
+                    st.success(T("archive.run_saved", n=workflow_run.id))
                     st.rerun()
 
                 workflow_runs = list_workflow_runs_for_ticket(db, selected_ticket_id, limit=30)
@@ -1141,7 +1304,7 @@ def main() -> None:
                         st.session_state.selected_workflow_run_id = current_run_id
 
                     selected_run_id = st.selectbox(
-                        "表示する実行",
+                        T("archive.display_run"),
                         options=run_ids,
                         index=run_ids.index(current_run_id),
                         format_func=lambda run_id: format_workflow_label(next(run for run in workflow_runs if run.id == run_id)),
@@ -1149,10 +1312,10 @@ def main() -> None:
                     )
                     st.session_state.selected_workflow_run_id = selected_run_id
                 else:
-                    st.info("まだワークフロー実行はありません。")
+                    st.info(T("archive.no_runs"))
                     st.session_state.selected_workflow_run_id = None
             else:
-                st.info("先にチケットを1件作成してください。")
+                st.info(T("archive.no_tickets"))
             panel_end()
 
         if not tickets:
@@ -1189,56 +1352,56 @@ def main() -> None:
         else:
             active_stage = "04"
 
-        render_flow_stage("01", "monitor", "起票内容の監視", "対象チケットの内容と現在ステータスをここで確認し、そのままワークフローを実行できます。", active=active_stage == "01")
+        render_flow_stage("01", T("stage.monitor.kicker"), T("stage.monitor.title"), T("stage.monitor.copy"), active=active_stage == "01")
         monitor_left, monitor_right = st.columns([1.2, 0.8], gap="large")
         with monitor_left:
             st.markdown(
-                f"<div class='ticket-monitor-body'><div class='monitor-block-title'>件名</div><div>{html.escape(selected_ticket.subject)}</div></div>",
+                f"<div class='ticket-monitor-body'><div class='monitor-block-title'>{html.escape(T('monitor.subject'))}</div><div>{html.escape(selected_ticket.subject)}</div></div>",
                 unsafe_allow_html=True,
             )
             st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
             st.markdown(
-                f"<div class='ticket-monitor-body'><div class='monitor-block-title'>問い合わせ内容</div><div>{html.escape(selected_ticket.body).replace(chr(10), '<br>')}</div></div>",
+                f"<div class='ticket-monitor-body'><div class='monitor-block-title'>{html.escape(T('monitor.body'))}</div><div>{html.escape(selected_ticket.body).replace(chr(10), '<br>')}</div></div>",
                 unsafe_allow_html=True,
             )
         with monitor_right:
             stat_cols = st.columns(1)
             with stat_cols[0]:
-                render_compact_stat("現在のステータス", status_badge_html(getattr(selected_ticket.status, "value", str(selected_ticket.status))))
-                render_compact_stat("次のアクション", html.escape(next_action_label(selected_run.next_action if selected_run else None)))
-                render_compact_stat("反復回数", f"<strong>{selected_run.iteration_count if selected_run else 0}</strong>")
-                render_compact_stat("監視対象", html.escape(f"{selected_ticket.external_id} / {selected_ticket.customer_email}"))
+                render_compact_stat(T("monitor.status"), status_badge_html(getattr(selected_ticket.status, "value", str(selected_ticket.status))))
+                render_compact_stat(T("monitor.next_action"), html.escape(next_action_label(selected_run.next_action if selected_run else None)))
+                render_compact_stat(T("monitor.iterations"), f"<strong>{selected_run.iteration_count if selected_run else 0}</strong>")
+                render_compact_stat(T("monitor.tracking"), html.escape(f"{selected_ticket.external_id} / {selected_ticket.customer_email}"))
         close_flow_stage()
 
         render_flow_divider("Draft", active=active_stage == "02")
 
-        render_flow_stage("02", "first response", "生成された初回回答", "ワークフローが最初に作成した返信案です。ここがレビュー前のベースになります。", active=active_stage == "02")
+        render_flow_stage("02", T("stage.draft.kicker"), T("stage.draft.title"), T("stage.draft.copy"), active=active_stage == "02")
         if selected_run is None:
-            st.info("ワークフロー実行後に初回回答が表示されます。")
+            st.info(T("stage.draft.empty"))
         else:
-            render_reading_block(first_draft or "まだ初回回答は生成されていません。")
+            render_reading_block(first_draft or T("stage.draft.no_content"))
             render_copy_button(first_draft or "", "first-draft")
         close_flow_stage()
 
         render_flow_divider("Review", active=active_stage == "03")
 
-        render_flow_stage("03", "uchiyama agent", "内山 agent のレビュー意見", "初回回答をレビューした結果の判断とコメントを表示します。必要ならこのあと修正版へ進みます。", active=active_stage == "03")
+        render_flow_stage("03", T("stage.review.kicker"), T("stage.review.title"), T("stage.review.copy"), active=active_stage == "03")
         if selected_run is None:
-            st.info("ワークフロー実行後にレビュー結果が表示されます。")
+            st.info(T("stage.review.empty"))
         else:
             render_review_comment_card(
                 latest_step.decision if latest_step and latest_step.decision else "-",
                 next_action_label(selected_run.next_action),
                 len(iteration_history),
-                review_notes or "まだレビューコメントはありません。",
+                review_notes or T("stage.review.no_comment"),
             )
             if iteration_history:
                 history_df = pd.DataFrame(
                     [
                         {
-                            "反復": step.iteration,
-                            "判断": _DECISION_LABEL.get(step.decision or "", step.decision or "-"),
-                            "レビュー内容": _parse_review_notes(step.review_notes)[0],
+                            T("review.iteration"): step.iteration,
+                            T("review.decision"): _decision_label(step.decision or ""),
+                            T("review.content"): _parse_review_notes(step.review_notes)[0],
                         }
                         for step in iteration_history
                     ]
@@ -1249,44 +1412,44 @@ def main() -> None:
 
         render_flow_divider("Revision", active=active_stage == "04")
 
-        render_flow_stage("04", "revised answer", "修正後の回答", "レビュー指摘を踏まえて整えた最終回答です。承認対象ならこの下でサインオフできます。", active=active_stage == "04")
+        render_flow_stage("04", T("stage.revision.kicker"), T("stage.revision.title"), T("stage.revision.copy"), active=active_stage == "04")
         if selected_run is None:
-            st.info("ワークフロー実行後に修正後の回答が表示されます。")
+            st.info(T("stage.revision.empty"))
         else:
-            render_reading_block(final_draft or "まだ修正後の回答はありません。")
+            render_reading_block(final_draft or T("stage.revision.no_content"))
             render_copy_button(final_draft or "", "final-draft")
         close_flow_stage()
 
-        render_flow_stage("05", "approval", "承認と補助アウトプット", "最終回答の承認と、顧客返信・連携メモ・社内要約の確認をここでまとめて行います。", active=active_stage == "05")
+        render_flow_stage("05", T("stage.approval.kicker"), T("stage.approval.title"), T("stage.approval.copy"), active=active_stage == "05")
         approval_left, approval_right = st.columns([0.72, 1.28], gap="large")
         with approval_left:
             if selected_run is None:
-                st.info("承認対象の実行がありません。")
+                st.info(T("approval.no_run"))
             else:
                 if approval_actions:
                     approval_df = pd.DataFrame(
                         [
                             {
-                                "承認者": item.approver,
-                                "アクション": item.action,
-                                "メモ": item.notes or "-",
-                                "日時": item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "-",
+                                T("approval.col.approver"): item.approver,
+                                T("approval.col.action"): item.action,
+                                T("approval.col.notes"): item.notes or "-",
+                                T("approval.col.datetime"): item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "-",
                             }
                             for item in approval_actions
                         ]
                     )
                     st.dataframe(approval_df, use_container_width=True, hide_index=True)
                 else:
-                    st.info("承認履歴はまだ記録されていません。")
+                    st.info(T("approval.no_history"))
 
                 needs_approval = getattr(selected_run.status, "value", str(selected_run.status)) == "needs_human_approval"
                 with st.form("approval_form"):
-                    approver = st.text_input("承認者", value="team.lead@company.com")
-                    notes = st.text_input("承認メモ", value="送信して問題ありません。")
-                    approved = st.form_submit_button("承認する", disabled=not needs_approval)
+                    approver = st.text_input(T("approval.approver"), value="team.lead@company.com")
+                    notes = st.text_input(T("approval.notes"), value=T("approval.notes_default"))
+                    approved = st.form_submit_button(T("approval.submit"), disabled=not needs_approval)
 
                 if not needs_approval:
-                    st.caption("この実行は現在、追加承認の対象ではありません。")
+                    st.caption(T("approval.not_needed"))
                 elif approved:
                     approve_workflow_run(
                         db=db,
@@ -1294,17 +1457,17 @@ def main() -> None:
                         approver=approver.strip(),
                         notes=notes.strip(),
                     )
-                    st.success("承認を保存しました。")
+                    st.success(T("approval.saved"))
                     st.rerun()
 
         with approval_right:
             if drafts is None:
-                st.info("ワークフロー実行後に補助アウトプットが表示されます。")
+                st.info(T("approval.no_drafts"))
             else:
-                customer_reply = drafts.get("customer_reply_draft") or "顧客向け返信はまだ生成されていません。"
-                vendor_reply = drafts.get("vendor_escalation_draft") or "ベンダー連携メモはまだありません。"
-                internal_summary = drafts.get("internal_summary") or "社内要約はまだありません。"
-                out1, out2, out3 = st.tabs(["顧客返信", "連携メモ", "社内要約"])
+                customer_reply = drafts.get("customer_reply_draft") or T("approval.no_customer")
+                vendor_reply = drafts.get("vendor_escalation_draft") or T("approval.no_vendor")
+                internal_summary = drafts.get("internal_summary") or T("approval.no_summary")
+                out1, out2, out3 = st.tabs([T("approval.tab.customer"), T("approval.tab.vendor"), T("approval.tab.summary")])
                 with out1:
                     render_reading_block(customer_reply)
                     render_copy_button(customer_reply, "customer-reply")

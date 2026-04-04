@@ -1,0 +1,14 @@
+[Unit]
+Description=Support Workflow FastAPI
+After=network.target
+
+[Service]
+User=azureuser
+WorkingDirectory=/home/azureuser/Super-Easy-Customer-Support/project
+EnvironmentFile=/home/azureuser/.env
+ExecStart=/home/azureuser/Super-Easy-Customer-Support/project/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

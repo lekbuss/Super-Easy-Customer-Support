@@ -1,0 +1,14 @@
+[Unit]
+Description=Support Workflow Streamlit
+After=network.target fastapi.service
+
+[Service]
+User=azureuser
+WorkingDirectory=/home/azureuser/Super-Easy-Customer-Support/project
+EnvironmentFile=/home/azureuser/.env
+ExecStart=/home/azureuser/Super-Easy-Customer-Support/project/.venv/bin/streamlit run dashboard/main.py --server.port 8501 --server.address 0.0.0.0
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
