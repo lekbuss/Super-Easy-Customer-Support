@@ -1526,14 +1526,10 @@ def main() -> None:
                     "letter-spacing:0.08em;margin-bottom:1rem;'>― 担当者アクション ―</div>",
                     unsafe_allow_html=True,
                 )
+                # ボタン行（3列均等 — 展開コンテンツはカラム外に置いて高さを揃える）
                 _act_col1, _act_col2, _act_col3 = st.columns(3, gap="medium")
 
-                # ---- ボタン1: 承認して送信 --------------------------------
                 with _act_col1:
-                    st.markdown(
-                        "<div style='text-align:center;'>",
-                        unsafe_allow_html=True,
-                    )
                     _approve_clicked = st.button(
                         "✅ 承認して送信",
                         key=f"btn_approve_{selected_run.id}",
@@ -1541,19 +1537,7 @@ def main() -> None:
                         type="primary",
                     )
                     st.caption("内山Agentが承認した回答をそのまま確定します。")
-                    st.markdown("</div>", unsafe_allow_html=True)
 
-                    if _approve_clicked:
-                        approve_workflow_run(
-                            db=db,
-                            workflow_run_id=selected_run.id,
-                            approver="担当者",
-                        )
-                        _render_chat_right("✅ 承認しました。顧客への返信が完了しました。")
-                        st.success("承認しました。顧客への返信が完了しました。")
-                        st.rerun()
-
-                # ---- ボタン2: DocuWareに問い合わせ -------------------------
                 with _act_col2:
                     _inquiry_clicked = st.button(
                         "📧 DocuWareに問い合わせ",
@@ -1562,31 +1546,6 @@ def main() -> None:
                     )
                     st.caption("DocuWare社テクニカルサポート宛の英文メールを生成します。")
 
-                    if _inquiry_clicked:
-                        st.session_state[f"show_inquiry_{selected_run.id}"] = True
-
-                    if st.session_state.get(f"show_inquiry_{selected_run.id}"):
-                        with st.expander("📧 英文問い合わせメール", expanded=True):
-                            _gen_key = f"inquiry_email_{selected_run.id}"
-                            if st.button("このメールを生成", key=f"btn_gen_email_{selected_run.id}"):
-                                with st.spinner("メールを生成中..."):
-                                    _email = generate_inquiry_email(db, selected_run.id)
-                                    st.session_state[_gen_key] = _email
-                            if _gen_key in st.session_state:
-                                _email_data = st.session_state[_gen_key]
-                                st.text_input(
-                                    "件名 (Subject)",
-                                    value=_email_data.get("email_subject", ""),
-                                    key=f"email_subj_{selected_run.id}",
-                                )
-                                st.text_area(
-                                    "本文 (Body)",
-                                    value=_email_data.get("email_body", ""),
-                                    height=280,
-                                    key=f"email_body_{selected_run.id}",
-                                )
-
-                # ---- ボタン3: 差し戻し ------------------------------------
                 with _act_col3:
                     _reject_clicked = st.button(
                         "❌ 差し戻し",
@@ -1595,38 +1554,75 @@ def main() -> None:
                     )
                     st.caption("理由を入力して最初から再起草を開始します。")
 
-                    if _reject_clicked:
-                        st.session_state[f"show_reject_{selected_run.id}"] = True
+                # ---- ボタン1: 承認して送信（ロジック）----------------------
+                if _approve_clicked:
+                    approve_workflow_run(
+                        db=db,
+                        workflow_run_id=selected_run.id,
+                        approver="担当者",
+                    )
+                    _render_chat_right("✅ 承認しました。顧客への返信が完了しました。")
+                    st.success("承認しました。顧客への返信が完了しました。")
+                    st.rerun()
 
-                    if st.session_state.get(f"show_reject_{selected_run.id}"):
-                        _reject_reason = st.text_area(
-                            "差し戻し理由",
-                            placeholder="例：顧客環境固有の障害への推測が含まれているため、調査結果を待つ内容に変更してください。",
-                            key=f"reject_reason_{selected_run.id}",
-                            height=120,
-                        )
-                        if st.button(
-                            "差し戻して再起草",
-                            key=f"btn_do_reject_{selected_run.id}",
-                            type="primary",
-                        ):
-                            if _reject_reason and _reject_reason.strip():
-                                with st.spinner("再起草中..."):
-                                    new_run, new_result = reject_and_rerun_workflow(
-                                        db=db,
-                                        workflow_run_id=selected_run.id,
-                                        reason=_reject_reason.strip(),
-                                    )
-                                st.session_state.selected_workflow_run_id = new_run.id
-                                st.session_state[f"wf_meta_{new_run.id}"] = {
-                                    "llm_fallback": new_result.get("llm_fallback", False),
-                                    "rag_sources": new_result.get("rag_sources", []),
-                                }
-                                st.session_state.pop(f"show_reject_{selected_run.id}", None)
-                                st.success(f"差し戻して再起草しました（新しい実行 #{new_run.id}）。")
-                                st.rerun()
-                            else:
-                                st.warning("差し戻し理由を入力してください。")
+                # ---- ボタン2: DocuWareに問い合わせ（展開コンテンツ）--------
+                if _inquiry_clicked:
+                    st.session_state[f"show_inquiry_{selected_run.id}"] = True
+
+                if st.session_state.get(f"show_inquiry_{selected_run.id}"):
+                    with st.expander("📧 英文問い合わせメール", expanded=True):
+                        _gen_key = f"inquiry_email_{selected_run.id}"
+                        if st.button("このメールを生成", key=f"btn_gen_email_{selected_run.id}"):
+                            with st.spinner("メールを生成中..."):
+                                _email = generate_inquiry_email(db, selected_run.id)
+                                st.session_state[_gen_key] = _email
+                        if _gen_key in st.session_state:
+                            _email_data = st.session_state[_gen_key]
+                            st.text_input(
+                                "件名 (Subject)",
+                                value=_email_data.get("email_subject", ""),
+                                key=f"email_subj_{selected_run.id}",
+                            )
+                            st.text_area(
+                                "本文 (Body)",
+                                value=_email_data.get("email_body", ""),
+                                height=280,
+                                key=f"email_body_{selected_run.id}",
+                            )
+
+                # ---- ボタン3: 差し戻し（展開コンテンツ）-------------------
+                if _reject_clicked:
+                    st.session_state[f"show_reject_{selected_run.id}"] = True
+
+                if st.session_state.get(f"show_reject_{selected_run.id}"):
+                    _reject_reason = st.text_area(
+                        "差し戻し理由",
+                        placeholder="例：顧客環境固有の障害への推測が含まれているため、調査結果を待つ内容に変更してください。",
+                        key=f"reject_reason_{selected_run.id}",
+                        height=120,
+                    )
+                    if st.button(
+                        "差し戻して再起草",
+                        key=f"btn_do_reject_{selected_run.id}",
+                        type="primary",
+                    ):
+                        if _reject_reason and _reject_reason.strip():
+                            with st.spinner("再起草中..."):
+                                new_run, new_result = reject_and_rerun_workflow(
+                                    db=db,
+                                    workflow_run_id=selected_run.id,
+                                    reason=_reject_reason.strip(),
+                                )
+                            st.session_state.selected_workflow_run_id = new_run.id
+                            st.session_state[f"wf_meta_{new_run.id}"] = {
+                                "llm_fallback": new_result.get("llm_fallback", False),
+                                "rag_sources": new_result.get("rag_sources", []),
+                            }
+                            st.session_state.pop(f"show_reject_{selected_run.id}", None)
+                            st.success(f"差し戻して再起草しました（新しい実行 #{new_run.id}）。")
+                            st.rerun()
+                        else:
+                            st.warning("差し戻し理由を入力してください。")
 
         close_flow_stage()
 
