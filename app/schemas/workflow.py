@@ -77,3 +77,7 @@ class WorkflowDraftsRead(BaseModel):
     customer_reply_draft: str | None
     vendor_escalation_draft: str | None
     internal_summary: str
+
+
+class RejectRequest(BaseModel):
+    reason: str

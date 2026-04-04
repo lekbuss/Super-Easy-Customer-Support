@@ -29,6 +29,7 @@ from app.workflows.support_workflow import run_support_workflow
 def run_and_persist_workflow_for_ticket(
     db: Session,
     ticket_id: int,
+    rejection_reason: str | None = None,
 ) -> tuple[WorkflowRun, dict]:
     ticket = get_ticket_by_id(db, ticket_id)
     if ticket is None:
@@ -38,7 +39,7 @@ def run_and_persist_workflow_for_ticket(
     db.add(workflow_run)
     db.flush()
 
-    result = run_support_workflow(ticket.id, ticket.subject, ticket.body)
+    result = run_support_workflow(ticket.id, ticket.subject, ticket.body, rejection_reason=rejection_reason)
     final_status = WorkflowStatus(result["status"])
 
     workflow_run.status = final_status
@@ -187,3 +188,87 @@ def get_workflow_outcome(
     steps = get_iteration_history(db, workflow_run_id)
     approvals = get_approval_actions(db, workflow_run_id)
     return workflow_run, steps, approvals
+
+
+def reject_and_rerun_workflow(
+    db: Session,
+    workflow_run_id: int,
+    reason: str,
+) -> tuple[WorkflowRun, dict]:
+    """Mark current run as rejected, then start a fresh run with the rejection reason."""
+    workflow_run = get_workflow_run(db, workflow_run_id)
+    if workflow_run is None:
+        raise ValueError("workflow_run_not_found")
+
+    ticket = db.get(Ticket, workflow_run.ticket_id)
+    if ticket is None:
+        raise ValueError("ticket_not_found")
+
+    # Mark the old run as failed/escalated so it is clearly superseded
+    workflow_run.next_action = f"rejected: {reason[:120]}"
+    workflow_run.completed_at = datetime.utcnow()
+    db.flush()
+
+    return run_and_persist_workflow_for_ticket(
+        db=db,
+        ticket_id=ticket.id,
+        rejection_reason=reason,
+    )
+
+
+def generate_inquiry_email(db: Session, workflow_run_id: int) -> dict:
+    """Generate a professional English inquiry email to DocuWare tech support."""
+    from app.llm.client import AnthropicClient, LLMServiceError
+
+    workflow_run = get_workflow_run(db, workflow_run_id)
+    if workflow_run is None:
+        raise ValueError("workflow_run_not_found")
+
+    ticket = db.get(Ticket, workflow_run.ticket_id)
+    if ticket is None:
+        raise ValueError("ticket_not_found")
+
+    # Collect what was tried (last draft + review notes)
+    steps = get_iteration_history(db, workflow_run_id)
+    last_draft = steps[-1].draft_response if steps else (workflow_run.final_draft_response or "")
+    last_review = _extract_review_comment(steps[-1].review_notes if steps else "") if steps else ""
+
+    system_prompt = (
+        "You are a professional technical support engineer at a DocuWare partner company in Japan. "
+        "Write a concise, professional English email to DocuWare technical support requesting assistance. "
+        "Output ONLY a JSON object with two keys: \"email_subject\" (string) and \"email_body\" (string). "
+        "The email_body should be plain text, ready to send."
+    )
+
+    user_message = (
+        f"Customer inquiry subject: {ticket.subject}\n"
+        f"Customer inquiry body:\n{ticket.body.strip()[:800]}\n\n"
+        f"Our attempted reply draft:\n{last_draft[:600]}\n\n"
+        f"Review feedback received:\n{last_review[:400]}\n\n"
+        "Please write a professional email to DocuWare technical support asking for help with this issue. "
+        "Include: problem description, what we have already tried, and what we need clarified."
+    )
+
+    client = AnthropicClient()
+    import json as _json
+    try:
+        raw = client.chat_sync(system_prompt, user_message)
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
+        data = _json.loads(text)
+        return {
+            "email_subject": data.get("email_subject", ""),
+            "email_body": data.get("email_body", raw),
+        }
+    except (LLMServiceError, Exception):
+        subject = f"Technical Support Request: {ticket.subject[:80]}"
+        body = (
+            f"Dear DocuWare Technical Support,\n\n"
+            f"We are writing to request assistance with the following customer issue.\n\n"
+            f"Subject: {ticket.subject}\n\n"
+            f"Issue Description:\n{ticket.body.strip()[:600]}\n\n"
+            "We would appreciate your guidance on how to resolve this matter.\n\n"
+            "Best regards,\nTechnical Support Team"
+        )
+        return {"email_subject": subject, "email_body": body}

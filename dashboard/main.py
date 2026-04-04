@@ -20,10 +20,12 @@ from app.services.draft_service import build_workflow_drafts
 from app.services.ticket_service import create_ticket, get_ticket_by_id, list_tickets
 from app.services.workflow_service import (
     approve_workflow_run,
+    generate_inquiry_email,
     get_approval_actions,
     get_iteration_history,
     get_workflow_run,
     list_workflow_runs_for_ticket,
+    reject_and_rerun_workflow,
     run_and_persist_workflow_for_ticket,
 )
 
@@ -1512,6 +1514,120 @@ def main() -> None:
                 render_copy_button(_last_draft, "final-draft")
             else:
                 st.info(T("stage.draft.no_content"))
+
+            # ----------------------------------------------------------------
+            # Human intervention buttons
+            # ----------------------------------------------------------------
+            _show_actions = _final_status in ("needs_human_approval", "escalated")
+            if _show_actions:
+                st.markdown(
+                    "<hr style='border:none;border-top:1px solid rgba(76,58,38,0.18);margin:1.4rem 0 1rem 0;'>"
+                    "<div style='text-align:center;font-size:0.78rem;color:#7b7268;"
+                    "letter-spacing:0.08em;margin-bottom:1rem;'>― 担当者アクション ―</div>",
+                    unsafe_allow_html=True,
+                )
+                _act_col1, _act_col2, _act_col3 = st.columns(3, gap="medium")
+
+                # ---- ボタン1: 承認して送信 --------------------------------
+                with _act_col1:
+                    st.markdown(
+                        "<div style='text-align:center;'>",
+                        unsafe_allow_html=True,
+                    )
+                    _approve_clicked = st.button(
+                        "✅ 承認して送信",
+                        key=f"btn_approve_{selected_run.id}",
+                        use_container_width=True,
+                        type="primary",
+                    )
+                    st.caption("内山Agentが承認した回答をそのまま確定します。")
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    if _approve_clicked:
+                        approve_workflow_run(
+                            db=db,
+                            workflow_run_id=selected_run.id,
+                            approver="担当者",
+                        )
+                        _render_chat_right("✅ 承認しました。顧客への返信が完了しました。")
+                        st.success("承認しました。顧客への返信が完了しました。")
+                        st.rerun()
+
+                # ---- ボタン2: DocuWareに問い合わせ -------------------------
+                with _act_col2:
+                    _inquiry_clicked = st.button(
+                        "📧 DocuWareに問い合わせ",
+                        key=f"btn_inquiry_{selected_run.id}",
+                        use_container_width=True,
+                    )
+                    st.caption("DocuWare社テクニカルサポート宛の英文メールを生成します。")
+
+                    if _inquiry_clicked:
+                        st.session_state[f"show_inquiry_{selected_run.id}"] = True
+
+                    if st.session_state.get(f"show_inquiry_{selected_run.id}"):
+                        with st.expander("📧 英文問い合わせメール", expanded=True):
+                            _gen_key = f"inquiry_email_{selected_run.id}"
+                            if st.button("このメールを生成", key=f"btn_gen_email_{selected_run.id}"):
+                                with st.spinner("メールを生成中..."):
+                                    _email = generate_inquiry_email(db, selected_run.id)
+                                    st.session_state[_gen_key] = _email
+                            if _gen_key in st.session_state:
+                                _email_data = st.session_state[_gen_key]
+                                st.text_input(
+                                    "件名 (Subject)",
+                                    value=_email_data.get("email_subject", ""),
+                                    key=f"email_subj_{selected_run.id}",
+                                )
+                                st.text_area(
+                                    "本文 (Body)",
+                                    value=_email_data.get("email_body", ""),
+                                    height=280,
+                                    key=f"email_body_{selected_run.id}",
+                                )
+
+                # ---- ボタン3: 差し戻し ------------------------------------
+                with _act_col3:
+                    _reject_clicked = st.button(
+                        "❌ 差し戻し",
+                        key=f"btn_reject_{selected_run.id}",
+                        use_container_width=True,
+                    )
+                    st.caption("理由を入力して最初から再起草を開始します。")
+
+                    if _reject_clicked:
+                        st.session_state[f"show_reject_{selected_run.id}"] = True
+
+                    if st.session_state.get(f"show_reject_{selected_run.id}"):
+                        _reject_reason = st.text_area(
+                            "差し戻し理由",
+                            placeholder="例：顧客環境固有の障害への推測が含まれているため、調査結果を待つ内容に変更してください。",
+                            key=f"reject_reason_{selected_run.id}",
+                            height=120,
+                        )
+                        if st.button(
+                            "差し戻して再起草",
+                            key=f"btn_do_reject_{selected_run.id}",
+                            type="primary",
+                        ):
+                            if _reject_reason and _reject_reason.strip():
+                                with st.spinner("再起草中..."):
+                                    new_run, new_result = reject_and_rerun_workflow(
+                                        db=db,
+                                        workflow_run_id=selected_run.id,
+                                        reason=_reject_reason.strip(),
+                                    )
+                                st.session_state.selected_workflow_run_id = new_run.id
+                                st.session_state[f"wf_meta_{new_run.id}"] = {
+                                    "llm_fallback": new_result.get("llm_fallback", False),
+                                    "rag_sources": new_result.get("rag_sources", []),
+                                }
+                                st.session_state.pop(f"show_reject_{selected_run.id}", None)
+                                st.success(f"差し戻して再起草しました（新しい実行 #{new_run.id}）。")
+                                st.rerun()
+                            else:
+                                st.warning("差し戻し理由を入力してください。")
+
         close_flow_stage()
 
         render_flow_stage("05", T("stage.approval.kicker"), T("stage.approval.title"), T("stage.approval.copy"), active=active_stage == "05")

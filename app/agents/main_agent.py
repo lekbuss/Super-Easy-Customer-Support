@@ -194,11 +194,19 @@ class DraftResult:
         self.rag_sources = rag_sources
 
 
+def _prepend_rejection(message: str, reason: str | None) -> str:
+    """Prepend rejection reason block to a user message if present."""
+    if not reason:
+        return message
+    return f"【前回の差し戻し理由】\n{reason.strip()}\n\n{message}"
+
+
 def generate_draft(
     ticket_subject: str,
     ticket_body: str,
     previous_draft: str | None = None,
     review_notes: str | None = None,
+    rejection_reason: str | None = None,
 ) -> DraftResult:
     """Generate a customer reply draft.
 
@@ -229,8 +237,11 @@ def generate_draft(
     # Step 2a: RAG context available → use it
     # -----------------------------------------------------------------------
     if rag_hits:
-        user_message = _build_user_message_with_rag(
-            ticket_subject, ticket_body, rag_hits, previous_draft, review_notes
+        user_message = _prepend_rejection(
+            _build_user_message_with_rag(
+                ticket_subject, ticket_body, rag_hits, previous_draft, review_notes
+            ),
+            rejection_reason,
         )
         rag_sources = [
             h.get("metadata", {}).get("source_url", "") for h in rag_hits
@@ -265,8 +276,11 @@ def generate_draft(
     # Step 2b: No RAG hits → try web search
     # -----------------------------------------------------------------------
     logger.info("Draft strategy: web search (no useful RAG hits)")
-    user_message_web = _build_user_message_web_search(
-        ticket_subject, ticket_body, previous_draft, review_notes
+    user_message_web = _prepend_rejection(
+        _build_user_message_web_search(
+            ticket_subject, ticket_body, previous_draft, review_notes
+        ),
+        rejection_reason,
     )
 
     try:
@@ -284,8 +298,11 @@ def generate_draft(
     # Step 3: LLM only (no external context)
     # -----------------------------------------------------------------------
     logger.info("Draft strategy: LLM-only (no external context)")
-    user_message_plain = _build_user_message_no_context(
-        ticket_subject, ticket_body, previous_draft, review_notes
+    user_message_plain = _prepend_rejection(
+        _build_user_message_no_context(
+            ticket_subject, ticket_body, previous_draft, review_notes
+        ),
+        rejection_reason,
     )
 
     try:

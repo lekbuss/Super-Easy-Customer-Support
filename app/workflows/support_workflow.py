@@ -47,11 +47,16 @@ class SupportState(TypedDict):
     next_action: str
     llm_fallback: bool
     rag_sources: list[str]
+    rejection_reason: str | None
 
 
 def main_agent_node(state: SupportState) -> SupportState:
     try:
-        result: DraftResult = generate_draft(state["subject"], state["body"])
+        result: DraftResult = generate_draft(
+            state["subject"],
+            state["body"],
+            rejection_reason=state.get("rejection_reason"),  # type: ignore[arg-type]
+        )
         return {
             **state,
             "draft_response": result.draft,
@@ -222,7 +227,12 @@ def build_support_workflow() -> Any:
     return graph.compile()
 
 
-def run_support_workflow(ticket_id: int, subject: str, body: str):
+def run_support_workflow(
+    ticket_id: int,
+    subject: str,
+    body: str,
+    rejection_reason: str | None = None,
+):
     app = build_support_workflow()
     initial_state: SupportState = {
         "ticket_id": ticket_id,
@@ -241,5 +251,6 @@ def run_support_workflow(ticket_id: int, subject: str, body: str):
         "next_action": "generate_initial_draft",
         "llm_fallback": False,
         "rag_sources": [],
+        "rejection_reason": rejection_reason,
     }
     return app.invoke(initial_state)
