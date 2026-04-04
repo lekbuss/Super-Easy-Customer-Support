@@ -25,6 +25,10 @@ pkill -f "streamlit run dashboard/main.py" || true
 sleep 3
 
 echo ">>> Starting services..."
+set -a
+source /home/azureuser/.env
+set +a
+
 nohup $VENV/uvicorn app.main:app --host 0.0.0.0 --port 8000 > $LOG_DIR/fastapi.log 2>&1 &
 sleep 3
 nohup $VENV/streamlit run dashboard/main.py --server.port 8501 --server.address 0.0.0.0 > $LOG_DIR/streamlit.log 2>&1 &
