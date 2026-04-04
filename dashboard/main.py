@@ -1142,7 +1142,7 @@ import base64 as _base64
 
 def _avatar_img_html(size: int = 40) -> str:
     """Return <img> HTML for Uchiyama's avatar, or '' if image not found."""
-    avatar_path = Path(__file__).resolve().parent / "assets" / "uchiyama_avatar.jpg"
+    avatar_path = Path(__file__).resolve().parent / "uchiyama_avatar.jpg"
     if not avatar_path.exists():
         return ""
     try:
