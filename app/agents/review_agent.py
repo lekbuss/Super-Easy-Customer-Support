@@ -62,25 +62,31 @@ def _make_notes_json(
 def _rule_based_review(draft: str, iteration: int) -> tuple[Decision, str]:
     """Fallback rule-based review used when LLM is unavailable."""
     if _contains_escalation_keyword(draft):
-        return "escalate", _make_notes_json(
+        notes = json.loads(_make_notes_json(
             "escalate",
             "法務またはセキュリティの専門担当による確認が必要です。",
             ["法務・セキュリティリスク"],
             "",
-        )
+        ))
+        notes["llm_fallback"] = True
+        return "escalate", json.dumps(notes, ensure_ascii=False)
     if iteration < 1:
-        return "revise", _make_notes_json(
+        notes = json.loads(_make_notes_json(
             "revise",
             "顧客ごとの具体的な対処手順と期待される結果を、もう少し明確にしてください。",
             ["具体的手順の明確化"],
             "具体的な手順と期待される結果を追記してください。",
-        )
-    return "approve", _make_notes_json(
+        ))
+        notes["llm_fallback"] = True
+        return "revise", json.dumps(notes, ensure_ascii=False)
+    notes = json.loads(_make_notes_json(
         "approve",
         "案内内容は基準を満たしており、そのまま送付可能です。",
         [],
         "",
-    )
+    ))
+    notes["llm_fallback"] = True
+    return "approve", json.dumps(notes, ensure_ascii=False)
 
 
 def _parse_llm_json(raw: str) -> dict:

@@ -7,7 +7,7 @@ except Exception:
     END = "__END__"
     StateGraph = None
 
-from app.agents.main_agent import generate_draft
+from app.agents.main_agent import DraftResult, generate_draft
 from app.agents.review_agent import review_draft
 from app.core.config import settings
 
@@ -45,12 +45,21 @@ class SupportState(TypedDict):
     escalated: bool
     escalation_reason: str | None
     next_action: str
+    llm_fallback: bool
+    rag_sources: list[str]
 
 
 def main_agent_node(state: SupportState) -> SupportState:
     try:
-        draft = generate_draft(state["subject"], state["body"])
-        return {**state, "draft_response": draft, "status": "reviewing", "next_action": "review_draft"}
+        result: DraftResult = generate_draft(state["subject"], state["body"])
+        return {
+            **state,
+            "draft_response": result.draft,
+            "llm_fallback": result.llm_fallback,
+            "rag_sources": result.rag_sources,
+            "status": "reviewing",
+            "next_action": "review_draft",
+        }
     except Exception as exc:
         return {
             **state,
@@ -112,7 +121,7 @@ def _readable_review_notes(notes_json: str) -> str:
 
 def revise_node(state: SupportState) -> SupportState:
     try:
-        revised_draft = generate_draft(
+        result: DraftResult = generate_draft(
             ticket_subject=state["subject"],
             ticket_body=state["body"],
             previous_draft=state["draft_response"],
@@ -120,7 +129,9 @@ def revise_node(state: SupportState) -> SupportState:
         )
         return {
             **state,
-            "draft_response": revised_draft,
+            "draft_response": result.draft,
+            "llm_fallback": result.llm_fallback,
+            "rag_sources": result.rag_sources,
             "iteration": state["iteration"] + 1,
             "status": "revising",
             "next_action": "review_revised_draft",
@@ -228,5 +239,7 @@ def run_support_workflow(ticket_id: int, subject: str, body: str):
         "escalated": False,
         "escalation_reason": None,
         "next_action": "generate_initial_draft",
+        "llm_fallback": False,
+        "rag_sources": [],
     }
     return app.invoke(initial_state)

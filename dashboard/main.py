@@ -1288,8 +1288,12 @@ def main() -> None:
                     render_workflow_running_card()
                     with st.spinner(T("archive.running_spinner")):
                         time.sleep(0.4)
-                        workflow_run, _ = run_and_persist_workflow_for_ticket(db=db, ticket_id=selected_ticket_id)
+                        workflow_run, _wf_result = run_and_persist_workflow_for_ticket(db=db, ticket_id=selected_ticket_id)
                     st.session_state.selected_workflow_run_id = workflow_run.id
+                    st.session_state[f"wf_meta_{workflow_run.id}"] = {
+                        "llm_fallback": _wf_result.get("llm_fallback", False),
+                        "rag_sources": _wf_result.get("rag_sources", []),
+                    }
                     st.session_state.workflow_running = False
                     st.session_state.pending_workflow_ticket_id = None
                     st.success(T("archive.run_saved", n=workflow_run.id))
@@ -1379,6 +1383,28 @@ def main() -> None:
         if selected_run is None:
             st.info(T("stage.draft.empty"))
         else:
+            _wf_meta = st.session_state.get(f"wf_meta_{selected_run.id}", {})
+            _llm_fallback = _wf_meta.get("llm_fallback", False)
+            _rag_sources = _wf_meta.get("rag_sources", [])
+            if _llm_fallback:
+                st.markdown(
+                    "<span style='background:#f0dfb5;color:#6d521c;padding:2px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;'>テンプレート（fallback）</span>",
+                    unsafe_allow_html=True,
+                )
+            elif _wf_meta:
+                st.markdown(
+                    "<span style='background:#dde9cf;color:#315228;padding:2px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;'>LLM生成</span>",
+                    unsafe_allow_html=True,
+                )
+            if _rag_sources:
+                src_items = "".join(
+                    f"<li style='font-size:0.8rem;color:#53493f;'>{html.escape(s)}</li>"
+                    for s in _rag_sources if s
+                )
+                st.markdown(
+                    f"<div style='margin:4px 0 8px 0'><strong style='font-size:0.8rem;'>参照ドキュメント：</strong><ul style='margin:2px 0 0 1rem;padding:0;'>{src_items}</ul></div>",
+                    unsafe_allow_html=True,
+                )
             render_reading_block(first_draft or T("stage.draft.no_content"))
             render_copy_button(first_draft or "", "first-draft")
         close_flow_stage()

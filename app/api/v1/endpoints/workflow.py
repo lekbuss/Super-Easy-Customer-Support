@@ -15,7 +15,12 @@ def run_workflow(payload: WorkflowStartRequest, db: Session = Depends(get_db)):
         workflow_run, result = run_and_persist_workflow_for_ticket(db=db, ticket_id=payload.ticket_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="Ticket not found")
-    return {"workflow_run_id": workflow_run.id, "result": result}
+    return {
+        "workflow_run_id": workflow_run.id,
+        "result": result,
+        "llm_used": not result.get("llm_fallback", False),
+        "rag_sources": result.get("rag_sources", []),
+    }
 
 
 @router.post("/{workflow_run_id}/approve")

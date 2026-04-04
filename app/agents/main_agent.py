@@ -184,12 +184,22 @@ def _fallback_draft(
 # Public API (signature unchanged)
 # ---------------------------------------------------------------------------
 
+class DraftResult:
+    """Return value of generate_draft."""
+    __slots__ = ("draft", "llm_fallback", "rag_sources")
+
+    def __init__(self, draft: str, llm_fallback: bool, rag_sources: list[str]) -> None:
+        self.draft = draft
+        self.llm_fallback = llm_fallback
+        self.rag_sources = rag_sources
+
+
 def generate_draft(
     ticket_subject: str,
     ticket_body: str,
     previous_draft: str | None = None,
     review_notes: str | None = None,
-) -> str:
+) -> DraftResult:
     """Generate a customer reply draft.
 
     Flow:
@@ -200,7 +210,7 @@ def generate_draft(
         → success  → return web-search-augmented reply
         → failure  → Step 3
       Step 3: LLM only (no external context)
-      Fallback: template if all LLM calls fail
+      Fallback: template if all LLM calls fail (llm_fallback=True)
     """
     query = f"{ticket_subject} {ticket_body}"
 
@@ -224,6 +234,7 @@ def generate_draft(
         )
         rag_sources = [
             h.get("metadata", {}).get("source_url", "") for h in rag_hits
+            if h.get("metadata", {}).get("source_url", "")
         ]
         logger.info("Draft strategy: RAG (%d docs) | sources: %s", len(rag_hits), rag_sources)
 
@@ -232,18 +243,19 @@ def generate_draft(
             try:
                 text, web_sources = client.chat_with_search_sync(DRAFT_SYSTEM_PROMPT, user_message)
                 if text:
+                    all_sources = list(dict.fromkeys(rag_sources + web_sources))
                     logger.info(
                         "Draft strategy: rag+web | rag_sources=%s web_sources=%s",
                         rag_sources, web_sources,
                     )
-                    return text
+                    return DraftResult(draft=text, llm_fallback=False, rag_sources=all_sources)
             except LLMServiceError:
                 # Web search not available for this model/tier — fall back to plain chat
                 pass
 
             text = client.chat_sync(DRAFT_SYSTEM_PROMPT, user_message)
             logger.info("Draft strategy: rag | sources=%s", rag_sources)
-            return text
+            return DraftResult(draft=text, llm_fallback=False, rag_sources=rag_sources)
 
         except Exception as exc:
             logger.warning("LLM call with RAG context failed: %s", exc)
@@ -261,7 +273,7 @@ def generate_draft(
         text, web_sources = client.chat_with_search_sync(DRAFT_SYSTEM_PROMPT, user_message_web)
         if text:
             logger.info("Draft strategy: web | sources=%s", web_sources)
-            return text
+            return DraftResult(draft=text, llm_fallback=False, rag_sources=web_sources)
         logger.warning("chat_with_search returned empty text, falling back")
     except LLMServiceError as exc:
         logger.warning("Web search failed: %s — trying LLM-only", exc)
@@ -277,7 +289,9 @@ def generate_draft(
     )
 
     try:
-        return client.chat_sync(DRAFT_SYSTEM_PROMPT, user_message_plain)
+        text = client.chat_sync(DRAFT_SYSTEM_PROMPT, user_message_plain)
+        return DraftResult(draft=text, llm_fallback=False, rag_sources=[])
     except Exception as exc:
         logger.warning("LLM-only draft also failed: %s — using template fallback", exc)
-        return _fallback_draft(ticket_subject, ticket_body, previous_draft, review_notes)
+        fallback_text = _fallback_draft(ticket_subject, ticket_body, previous_draft, review_notes)
+        return DraftResult(draft=fallback_text, llm_fallback=True, rag_sources=[])

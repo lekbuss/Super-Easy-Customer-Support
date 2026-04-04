@@ -34,6 +34,12 @@ class AnthropicClient:
                     temperature=self._temperature,
                     system=system_prompt,
                     messages=[{"role": "user", "content": user_message}],
+                    timeout=30.0,
+                )
+                logger.info(
+                    "LLM usage: input_tokens=%d output_tokens=%d",
+                    response.usage.input_tokens,
+                    response.usage.output_tokens,
                 )
                 return response.content[0].text
             except anthropic.APIStatusError as exc:
@@ -78,6 +84,12 @@ class AnthropicClient:
                     temperature=self._temperature,
                     system=system_prompt,
                     messages=[{"role": "user", "content": user_message}],
+                    timeout=30.0,
+                )
+                logger.info(
+                    "LLM usage (sync): input_tokens=%d output_tokens=%d",
+                    response.usage.input_tokens,
+                    response.usage.output_tokens,
                 )
                 return response.content[0].text
             except anthropic.APIStatusError as exc:
@@ -135,6 +147,12 @@ class AnthropicClient:
                             "max_uses": max_uses,
                         }
                     ],
+                    timeout=30.0,
+                )
+                logger.info(
+                    "LLM usage (web_search): input_tokens=%d output_tokens=%d",
+                    response.usage.input_tokens,
+                    response.usage.output_tokens,
                 )
 
                 text_parts: list[str] = []
