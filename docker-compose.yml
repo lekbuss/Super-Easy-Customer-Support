@@ -1,0 +1,66 @@
+services:
+  api:
+    build: .
+    command:
+      - python
+      - -m
+      - uvicorn
+      - app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      APP_ENV: cloud
+      DATABASE_URL: sqlite:////data/support_workflow.db
+      API_HOST: 0.0.0.0
+      API_PORT: "8000"
+    ports:
+      - "8000:8000"
+    volumes:
+      - support_data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    build: .
+    command:
+      - python
+      - -m
+      - streamlit
+      - run
+      - dashboard/main.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+      - --server.headless=true
+    environment:
+      APP_ENV: cloud
+      DATABASE_URL: sqlite:////data/support_workflow.db
+      DASHBOARD_HOST: 0.0.0.0
+      DASHBOARD_PORT: "8501"
+    ports:
+      - "8501:8501"
+    volumes:
+      - support_data:/data
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3)
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  support_data:

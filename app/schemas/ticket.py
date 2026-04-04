@@ -10,6 +10,7 @@ class TicketCreate(BaseModel):
     customer_email: EmailStr
     subject: str
     body: str
+    source: str = "api"
 
 
 class TicketRead(BaseModel):
@@ -18,6 +19,7 @@ class TicketRead(BaseModel):
     customer_email: str
     subject: str
     body: str
+    source: str
     status: WorkflowStatus
     created_at: datetime
 

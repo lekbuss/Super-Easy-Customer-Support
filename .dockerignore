@@ -1,0 +1,12 @@
+.git
+.gitignore
+.venv
+.vs
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite
+.env
+support_workflow.db

@@ -1,24 +1,20 @@
-from datetime import datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.workflow import WorkflowStartRequest
-from app.services.workflow_service import approve_workflow_run, run_and_persist_workflow
+from app.schemas.workflow import WorkflowDraftsRead, WorkflowOutcomeRead, WorkflowStartRequest
+from app.services.draft_service import build_workflow_drafts
+from app.services.workflow_service import approve_workflow_run, get_workflow_outcome, run_and_persist_workflow_for_ticket
 
 router = APIRouter(prefix="/workflow", tags=["workflow"])
 
 
 @router.post("/run")
 def run_workflow(payload: WorkflowStartRequest, db: Session = Depends(get_db)):
-    workflow_run, result = run_and_persist_workflow(
-        db=db,
-        external_id=f"api-{payload.ticket_id}-{int(datetime.utcnow().timestamp())}",
-        customer_email="customer@example.com",
-        subject="DocuWare support request",
-        body="Customer reports indexing and retrieval mismatch in archive cabinet.",
-    )
+    try:
+        workflow_run, result = run_and_persist_workflow_for_ticket(db=db, ticket_id=payload.ticket_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Ticket not found")
     return {"workflow_run_id": workflow_run.id, "result": result}
 
 
@@ -29,3 +25,25 @@ def approve_workflow(workflow_run_id: int, approver: str = "dashboard_user", db:
     except ValueError:
         raise HTTPException(status_code=404, detail="Workflow run not found")
     return {"workflow_run_id": workflow_run.id, "status": workflow_run.status.value, "next_action": workflow_run.next_action}
+
+
+@router.get("/{workflow_run_id}/outcome", response_model=WorkflowOutcomeRead)
+def get_workflow_outcome_endpoint(workflow_run_id: int, db: Session = Depends(get_db)):
+    outcome = get_workflow_outcome(db, workflow_run_id)
+    if outcome is None:
+        raise HTTPException(status_code=404, detail="Workflow run not found")
+
+    workflow_run, steps, approvals = outcome
+    return {
+        "workflow_run": workflow_run,
+        "steps": steps,
+        "approvals": approvals,
+    }
+
+
+@router.get("/{workflow_run_id}/drafts", response_model=WorkflowDraftsRead)
+def get_workflow_drafts_endpoint(workflow_run_id: int, db: Session = Depends(get_db)):
+    drafts = build_workflow_drafts(db, workflow_run_id)
+    if drafts is None:
+        raise HTTPException(status_code=404, detail="Workflow run not found")
+    return drafts

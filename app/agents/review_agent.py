@@ -9,7 +9,7 @@ def review_draft(draft: str, iteration: int) -> tuple[Decision, str]:
         raise ValueError("Draft is empty")
     lowered = draft.lower()
     if "legal" in lowered or "security incident" in lowered:
-        return "escalate", "Requires specialist legal/security handling"
+        return "escalate", "法務またはセキュリティの専門担当による確認が必要です。"
     if iteration < 1:
-        return "revise", "Clarify customer-specific remediation steps and expected outcome"
-    return "approve", "Draft meets baseline review rules"
+        return "revise", "顧客ごとの具体的な対処手順と期待される結果を、もう少し明確にしてください。"
+    return "approve", "案内内容は基準を満たしており、そのまま送付可能です。"
