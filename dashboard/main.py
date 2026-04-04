@@ -1499,39 +1499,46 @@ def main() -> None:
         else:
             active_stage = "04"
 
-        render_flow_stage("01", T("stage.monitor.kicker"), T("stage.monitor.title"), T("stage.monitor.copy"), active=active_stage == "01")
-        monitor_left, monitor_right = st.columns([1.2, 0.8], gap="large")
-        with monitor_left:
-            st.markdown(
-                f"<div class='ticket-monitor-body'><div class='monitor-block-title'>{html.escape(T('monitor.subject'))}</div><div>{html.escape(selected_ticket.subject)}</div></div>",
-                unsafe_allow_html=True,
-            )
-            st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
-            st.markdown(
-                f"<div class='ticket-monitor-body'><div class='monitor-block-title'>{html.escape(T('monitor.body'))}</div><div>{html.escape(selected_ticket.body).replace(chr(10), '<br>')}</div></div>",
-                unsafe_allow_html=True,
-            )
-        with monitor_right:
-            stat_cols = st.columns(1)
-            with stat_cols[0]:
-                render_compact_stat(T("monitor.status"), status_badge_html(getattr(selected_ticket.status, "value", str(selected_ticket.status))))
-                render_compact_stat(T("monitor.next_action"), html.escape(next_action_label(selected_run.next_action if selected_run else None)))
-                render_compact_stat(T("monitor.iterations"), f"<strong>{selected_run.iteration_count if selected_run else 0}</strong>")
-                render_compact_stat(T("monitor.tracking"), html.escape(f"{selected_ticket.external_id} / {selected_ticket.customer_email}"))
-        close_flow_stage()
-
-        render_flow_divider("Chat", active=active_stage in ("02", "03", "04"))
-
-        render_flow_stage(
-            "02–04",
-            "conversation",
-            "回答担当 × 内山さん",
-            "回答担当が草稿を起案し、内山さんがレビューするやり取りをチャット形式で表示します。",
-            active=active_stage in ("02", "03", "04"),
-        )
         if selected_run is None:
-            st.info(T("stage.draft.empty"))
+            st.markdown(
+                "<div style='text-align:center;padding:2.5rem 1rem;color:#7b7268;"
+                "font-size:0.9rem;letter-spacing:0.04em;'>"
+                "⬆️ ワークフローを実行すると、監視パネルとチャットがここに表示されます。"
+                "</div>",
+                unsafe_allow_html=True,
+            )
         else:
+            render_flow_stage("01", T("stage.monitor.kicker"), T("stage.monitor.title"), T("stage.monitor.copy"), active=active_stage == "01")
+            monitor_left, monitor_right = st.columns([1.2, 0.8], gap="large")
+            with monitor_left:
+                st.markdown(
+                    f"<div class='ticket-monitor-body'><div class='monitor-block-title'>{html.escape(T('monitor.subject'))}</div><div>{html.escape(selected_ticket.subject)}</div></div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
+                st.markdown(
+                    f"<div class='ticket-monitor-body'><div class='monitor-block-title'>{html.escape(T('monitor.body'))}</div><div>{html.escape(selected_ticket.body).replace(chr(10), '<br>')}</div></div>",
+                    unsafe_allow_html=True,
+                )
+            with monitor_right:
+                stat_cols = st.columns(1)
+                with stat_cols[0]:
+                    render_compact_stat(T("monitor.status"), status_badge_html(getattr(selected_ticket.status, "value", str(selected_ticket.status))))
+                    render_compact_stat(T("monitor.next_action"), html.escape(next_action_label(selected_run.next_action if selected_run else None)))
+                    render_compact_stat(T("monitor.iterations"), f"<strong>{selected_run.iteration_count if selected_run else 0}</strong>")
+                    render_compact_stat(T("monitor.tracking"), html.escape(f"{selected_ticket.external_id} / {selected_ticket.customer_email}"))
+            close_flow_stage()
+
+        if selected_run is not None:
+            render_flow_divider("Chat", active=active_stage in ("02", "03", "04"))
+
+            render_flow_stage(
+                "02–04",
+                "conversation",
+                "回答担当 × 内山さん",
+                "回答担当が草稿を起案し、内山さんがレビューするやり取りをチャット形式で表示します。",
+                active=active_stage in ("02", "03", "04"),
+            )
             st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
             _wf_meta = st.session_state.get(f"wf_meta_{selected_run.id}", {})
             _final_status = getattr(selected_run.status, "value", str(selected_run.status))
@@ -1652,7 +1659,7 @@ def main() -> None:
                         else:
                             st.warning("差し戻し理由を入力してください。")
 
-        close_flow_stage()
+            close_flow_stage()
 
 
 
