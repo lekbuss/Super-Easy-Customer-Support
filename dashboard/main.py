@@ -1132,6 +1132,122 @@ def _decision_label(decision: str) -> str:
     return T(key) if key in _I18N else decision
 
 
+# ---------------------------------------------------------------------------
+# Chat UI helpers
+# ---------------------------------------------------------------------------
+
+def _decision_badge_html(decision: str) -> str:
+    styles = {
+        "revise":   ("background:#c47d20;color:#fff;", "🔄 要修正"),
+        "approve":  ("background:#2d7a3a;color:#fff;", "✅ 承認"),
+        "escalate": ("background:#9a2b1e;color:#fff;", "⚠️ エスカレーション"),
+    }
+    style, label = styles.get(decision, ("background:#555;color:#fff;", decision))
+    return (
+        f"<span style='{style}padding:2px 10px;border-radius:12px;"
+        f"font-size:0.76rem;font-weight:700;margin-left:6px;'>{label}</span>"
+    )
+
+
+def _render_chat_left(text: str, badge_html: str = "", sources: list | None = None) -> None:
+    """Left-aligned bubble: 回答担当（濃い青）"""
+    escaped = html.escape(text).replace("\n", "<br>")
+    src_html = ""
+    if sources:
+        items = "".join(
+            f"<li style='margin:0;'>{html.escape(s)}</li>"
+            for s in sources if s
+        )
+        src_html = (
+            f"<div style='margin-top:8px;font-size:0.76rem;opacity:0.8;'>"
+            f"参照：<ul style='margin:2px 0 0 1rem;padding:0;'>{items}</ul></div>"
+        )
+    st.markdown(
+        f"""
+        <div style="display:flex;align-items:flex-start;margin-bottom:1.4rem;">
+          <div style="margin-right:0.55rem;font-size:1.3rem;line-height:1.3;flex-shrink:0;">🔵</div>
+          <div style="max-width:680px;">
+            <div style="font-size:0.72rem;color:#7b7268;margin-bottom:3px;">
+              回答担当{badge_html}
+            </div>
+            <div style="background:#1e3a5f;color:#e8f0ff;padding:0.85rem 1.1rem;
+                        border-radius:0 14px 14px 14px;font-size:0.875rem;line-height:1.7;">
+              {escaped}{src_html}
+            </div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_chat_right(text: str, badge_html: str = "") -> None:
+    """Right-aligned bubble: 内山さん（濃い緑）"""
+    escaped = html.escape(text).replace("\n", "<br>")
+    st.markdown(
+        f"""
+        <div style="display:flex;align-items:flex-start;justify-content:flex-end;margin-bottom:1.4rem;">
+          <div style="max-width:680px;">
+            <div style="font-size:0.72rem;color:#7b7268;margin-bottom:3px;text-align:right;">
+              内山さん{badge_html}
+            </div>
+            <div style="background:#1a3a2a;color:#d6f0e0;padding:0.85rem 1.1rem;
+                        border-radius:14px 0 14px 14px;font-size:0.875rem;line-height:1.7;">
+              {escaped}
+            </div>
+          </div>
+          <div style="margin-left:0.55rem;font-size:1.3rem;line-height:1.3;flex-shrink:0;">🟢</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_chat_workflow(iteration_history: list, final_status: str, wf_meta: dict) -> None:
+    """Render the full draft↔review conversation as a chat UI."""
+    _llm_fallback = wf_meta.get("llm_fallback", False)
+    _rag_sources  = wf_meta.get("rag_sources", [])
+
+    # Opening message from 内山
+    _render_chat_right("こちらの問い合わせの回答をお願いします。")
+
+    for i, step in enumerate(iteration_history):
+        # --- 回答担当の草稿 ---
+        draft_text = step.draft_response or ""
+        if draft_text:
+            # fallback badge only shown for first draft (wf_meta tracks initial run)
+            draft_badge = ""
+            sources = []
+            if i == 0:
+                if _llm_fallback:
+                    draft_badge = (
+                        "<span style='background:#888;color:#fff;padding:1px 8px;"
+                        "border-radius:10px;font-size:0.73rem;font-weight:600;"
+                        "margin-left:6px;'>テンプレート</span>"
+                    )
+                sources = _rag_sources
+            _render_chat_left(draft_text, badge_html=draft_badge, sources=sources)
+
+        # --- 内山のレビューコメント ---
+        review_comment, key_concerns, suggestions = _parse_review_notes(step.review_notes or "")
+        decision = step.decision or ""
+
+        if review_comment:
+            # Build message body
+            msg_parts = [review_comment]
+            if key_concerns:
+                msg_parts.append("\n【指摘ポイント】\n" + "\n".join(f"・{c}" for c in key_concerns))
+            if suggestions:
+                msg_parts.append("\n【修正提案】\n" + suggestions)
+            review_text = "\n".join(msg_parts)
+            review_badge = _decision_badge_html(decision) if decision else ""
+            _render_chat_right(review_text, badge_html=review_badge)
+
+    # Final approval message if workflow ended with approval
+    if final_status == "approved":
+        _render_chat_right("✅ この内容で送付してください。承認します。")
+
+
 def render_review_comment_card(decision: str, next_action: str, count: int, notes: str) -> None:
     review_comment, key_concerns, suggestions = _parse_review_notes(notes)
     decision_label = _decision_label(decision) if decision else html.escape(decision)
@@ -1339,10 +1455,7 @@ def main() -> None:
                 drafts = build_workflow_drafts(db, selected_run.id)
 
         first_step = iteration_history[0] if iteration_history else None
-        latest_step = iteration_history[-1] if iteration_history else None
         first_draft = first_step.draft_response if first_step else None
-        review_notes = latest_step.review_notes if latest_step else (selected_run.final_review_notes if selected_run else None)
-        final_draft = selected_run.final_draft_response if selected_run else None
         current_action = selected_run.next_action if selected_run else None
         active_stage = "01"
         if selected_run is None:
@@ -1377,73 +1490,28 @@ def main() -> None:
                 render_compact_stat(T("monitor.tracking"), html.escape(f"{selected_ticket.external_id} / {selected_ticket.customer_email}"))
         close_flow_stage()
 
-        render_flow_divider("Draft", active=active_stage == "02")
+        render_flow_divider("Chat", active=active_stage in ("02", "03", "04"))
 
-        render_flow_stage("02", T("stage.draft.kicker"), T("stage.draft.title"), T("stage.draft.copy"), active=active_stage == "02")
+        render_flow_stage(
+            "02–04",
+            "conversation",
+            "回答担当 × 内山さん",
+            "回答担当が草稿を起案し、内山さんがレビューするやり取りをチャット形式で表示します。",
+            active=active_stage in ("02", "03", "04"),
+        )
         if selected_run is None:
             st.info(T("stage.draft.empty"))
         else:
+            st.markdown("<div style='height:0.5rem'></div>", unsafe_allow_html=True)
             _wf_meta = st.session_state.get(f"wf_meta_{selected_run.id}", {})
-            _llm_fallback = _wf_meta.get("llm_fallback", False)
-            _rag_sources = _wf_meta.get("rag_sources", [])
-            if _llm_fallback:
-                st.markdown(
-                    "<span style='background:#f0dfb5;color:#6d521c;padding:2px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;'>テンプレート（fallback）</span>",
-                    unsafe_allow_html=True,
-                )
-            elif _wf_meta:
-                st.markdown(
-                    "<span style='background:#dde9cf;color:#315228;padding:2px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;'>LLM生成</span>",
-                    unsafe_allow_html=True,
-                )
-            if _rag_sources:
-                src_items = "".join(
-                    f"<li style='font-size:0.8rem;color:#53493f;'>{html.escape(s)}</li>"
-                    for s in _rag_sources if s
-                )
-                st.markdown(
-                    f"<div style='margin:4px 0 8px 0'><strong style='font-size:0.8rem;'>参照ドキュメント：</strong><ul style='margin:2px 0 0 1rem;padding:0;'>{src_items}</ul></div>",
-                    unsafe_allow_html=True,
-                )
-            render_reading_block(first_draft or T("stage.draft.no_content"))
-            render_copy_button(first_draft or "", "first-draft")
-        close_flow_stage()
-
-        render_flow_divider("Review", active=active_stage == "03")
-
-        render_flow_stage("03", T("stage.review.kicker"), T("stage.review.title"), T("stage.review.copy"), active=active_stage == "03")
-        if selected_run is None:
-            st.info(T("stage.review.empty"))
-        else:
-            render_review_comment_card(
-                latest_step.decision if latest_step and latest_step.decision else "-",
-                next_action_label(selected_run.next_action),
-                len(iteration_history),
-                review_notes or T("stage.review.no_comment"),
-            )
+            _final_status = getattr(selected_run.status, "value", str(selected_run.status))
             if iteration_history:
-                history_df = pd.DataFrame(
-                    [
-                        {
-                            T("review.iteration"): step.iteration,
-                            T("review.decision"): _decision_label(step.decision or ""),
-                            T("review.content"): _parse_review_notes(step.review_notes)[0],
-                        }
-                        for step in iteration_history
-                    ]
-                )
-                st.markdown("<div style='height:0.9rem'></div>", unsafe_allow_html=True)
-                st.dataframe(history_df, use_container_width=True, hide_index=True)
-        close_flow_stage()
-
-        render_flow_divider("Revision", active=active_stage == "04")
-
-        render_flow_stage("04", T("stage.revision.kicker"), T("stage.revision.title"), T("stage.revision.copy"), active=active_stage == "04")
-        if selected_run is None:
-            st.info(T("stage.revision.empty"))
-        else:
-            render_reading_block(final_draft or T("stage.revision.no_content"))
-            render_copy_button(final_draft or "", "final-draft")
+                render_chat_workflow(iteration_history, _final_status, _wf_meta)
+                # Copy button for the final draft (last step's draft)
+                _last_draft = iteration_history[-1].draft_response or ""
+                render_copy_button(_last_draft, "final-draft")
+            else:
+                st.info(T("stage.draft.no_content"))
         close_flow_stage()
 
         render_flow_stage("05", T("stage.approval.kicker"), T("stage.approval.title"), T("stage.approval.copy"), active=active_stage == "05")
