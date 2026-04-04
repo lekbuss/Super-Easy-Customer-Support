@@ -1138,6 +1138,25 @@ def _decision_label(decision: str) -> str:
 # Chat UI helpers
 # ---------------------------------------------------------------------------
 
+import base64 as _base64
+
+def _avatar_img_html(size: int = 40) -> str:
+    """Return <img> HTML for Uchiyama's avatar, or '' if image not found."""
+    avatar_path = Path(__file__).resolve().parent / "assets" / "uchiyama_avatar.jpg"
+    if not avatar_path.exists():
+        return ""
+    try:
+        data = avatar_path.read_bytes()
+        b64 = _base64.b64encode(data).decode()
+        return (
+            f"<img src='data:image/jpeg;base64,{b64}' "
+            f"style='width:{size}px;height:{size}px;border-radius:50%;"
+            f"object-fit:cover;flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,0.25);'>"
+        )
+    except Exception:
+        return ""
+
+
 def _decision_badge_html(decision: str) -> str:
     styles = {
         "revise":   ("background:#c47d20;color:#fff;", "🔄 要修正"),
@@ -1150,6 +1169,8 @@ def _decision_badge_html(decision: str) -> str:
         f"font-size:0.76rem;font-weight:700;margin-left:6px;'>{label}</span>"
     )
 
+
+_AVATAR_SIZE = 40  # px — both avatars use this size
 
 def _render_chat_left(text: str, badge_html: str = "", sources: list | None = None) -> None:
     """Left-aligned bubble: 回答担当（濃い青）"""
@@ -1164,10 +1185,16 @@ def _render_chat_left(text: str, badge_html: str = "", sources: list | None = No
             f"<div style='margin-top:8px;font-size:0.76rem;opacity:0.8;'>"
             f"参照：<ul style='margin:2px 0 0 1rem;padding:0;'>{items}</ul></div>"
         )
+    # 回答担当アバター：青い円（画像なし）
+    left_avatar = (
+        f"<div style='width:{_AVATAR_SIZE}px;height:{_AVATAR_SIZE}px;border-radius:50%;"
+        f"background:#1e3a5f;flex-shrink:0;display:flex;align-items:center;"
+        f"justify-content:center;font-size:1.1rem;box-shadow:0 1px 4px rgba(0,0,0,0.2);'>🔵</div>"
+    )
     st.markdown(
         f"""
         <div style="display:flex;align-items:flex-start;margin-bottom:1.4rem;">
-          <div style="margin-right:0.55rem;font-size:1.3rem;line-height:1.3;flex-shrink:0;">🔵</div>
+          <div style="margin-right:0.6rem;flex-shrink:0;">{left_avatar}</div>
           <div style="max-width:680px;">
             <div style="font-size:0.72rem;color:#7b7268;margin-bottom:3px;">
               回答担当{badge_html}
@@ -1184,8 +1211,16 @@ def _render_chat_left(text: str, badge_html: str = "", sources: list | None = No
 
 
 def _render_chat_right(text: str, badge_html: str = "") -> None:
-    """Right-aligned bubble: 内山さん（濃い緑）"""
+    """Right-aligned bubble: 内山さん（顔写真 or 緑円フォールバック）"""
     escaped = html.escape(text).replace("\n", "<br>")
+    # 内山さんアバター：写真があれば使用、なければ緑円
+    right_avatar = _avatar_img_html(size=_AVATAR_SIZE)
+    if not right_avatar:
+        right_avatar = (
+            f"<div style='width:{_AVATAR_SIZE}px;height:{_AVATAR_SIZE}px;border-radius:50%;"
+            f"background:#1a3a2a;flex-shrink:0;display:flex;align-items:center;"
+            f"justify-content:center;font-size:1.1rem;box-shadow:0 1px 4px rgba(0,0,0,0.2);'>🟢</div>"
+        )
     st.markdown(
         f"""
         <div style="display:flex;align-items:flex-start;justify-content:flex-end;margin-bottom:1.4rem;">
@@ -1198,7 +1233,7 @@ def _render_chat_right(text: str, badge_html: str = "") -> None:
               {escaped}
             </div>
           </div>
-          <div style="margin-left:0.55rem;font-size:1.3rem;line-height:1.3;flex-shrink:0;">🟢</div>
+          <div style="margin-left:0.6rem;flex-shrink:0;">{right_avatar}</div>
         </div>
         """,
         unsafe_allow_html=True,
